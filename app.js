@@ -37,7 +37,7 @@ function audit(action,entity,recordId,before=null,after=null){db.audit.push({id:
 function allowed(role,feature){if(role==='Owner'||role==='Full Access Member')return true;if(role==='Manager')return !['users','cashSettings'].includes(feature);if(role==='Family Member')return ['home','expenses','reports','sales','collections'].includes(feature);if(role==='Staff')return ['sales','collections','milk','stock','customers'].includes(feature);return false}
 function init(){
   if(!db.currentUser){login();return;}
-  if(CLOUD_API && localStorage.getItem('durga-token')){
+  if(CLOUD_API){
     cloudSync().finally(()=>render('dashboard'));
   }else render('dashboard');
 }
