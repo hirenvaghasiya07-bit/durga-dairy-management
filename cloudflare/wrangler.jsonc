@@ -1,0 +1,10 @@
+{
+  "name": "durga-dairy-live-api",
+  "main": "./worker.mjs",
+  "compatibility_date": "2026-10-02",
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "durga-dairy-live",
+    "database_id": "4b4f8949-bc26-4aa0-ab4e-13710f363995"
+  }]
+}
