@@ -50,7 +50,7 @@ async function ensureSeed(env){
   await env.DB.prepare("INSERT OR IGNORE INTO workspace_state(workspace_id,state_json,updated_at) VALUES(?,?,?)").bind("durga-dairy",JSON.stringify({version:4}),new Date().toISOString()).run();
 }
 
-const ARRAY_KEYS=["sales","collections","milk","stockPurchases","stockUsage","expenses","customers","vendors","cashChecks","audit","prices"];
+const ARRAY_KEYS=["sales","collections","milk","stockPurchases","stockUsage","expenses","customers","vendors","cashChecks","cashOpenings","audit","prices"];
 
 function clone(v){
   return v==null ? v : JSON.parse(JSON.stringify(v));
