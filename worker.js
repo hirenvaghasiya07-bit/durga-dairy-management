@@ -144,8 +144,7 @@ export default {
       }
 
       if(url.pathname==="/api/zero-two-state" && req.method==="GET"){
-        const u=await authUser(req,env);
-        if(!u || !["Owner","Full Access Member"].includes(u.role)) return json({error:"Zero Two requires Full Access access"},403);
+        // All is intentionally read-only and public. Hiren/Akash partitions remain protected.
         const session=env.DB.withSession("first-primary");
         const row=await session.prepare("SELECT state_json,updated_at FROM workspace_state WHERE workspace_id=?").bind("durga-dairy").first();
         const db=row?.state_json?JSON.parse(row.state_json):{version:4};
