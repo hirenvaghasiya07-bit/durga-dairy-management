@@ -428,19 +428,27 @@ function dailyMilkValues(c,date){
     cowRate:s.cow.rate,buffRate:s.buffalo.rate,cowMorningRate:s.cow.morningRate,cowEveningRate:s.cow.eveningRate,buffMorningRate:s.buffalo.morningRate,buffEveningRate:s.buffalo.eveningRate,
     cowMorningSlabId:s.cow.morningSlabId,cowEveningSlabId:s.cow.eveningSlabId,buffMorningSlabId:s.buffalo.morningSlabId,buffEveningSlabId:s.buffalo.eveningSlabId,qty,amount,auto:true};
 }
-function saveCustomerDailyInline(customerId,date){
+function saveCustomerDailyInline(customerId,date,el){
   const c=(db.customers||[]).find(x=>x.id===customerId);if(!c)return;
   const cm=num(document.getElementById('cmq_'+customerId)?.value),ce=num(document.getElementById('ceq_'+customerId)?.value),bm=num(document.getElementById('bmq_'+customerId)?.value),be=num(document.getElementById('beq_'+customerId)?.value);
   const s=customerMilkSchedule(c),qty=cm+ce+bm+be,amount=cm*s.cow.morningRate+ce*s.cow.eveningRate+bm*s.buffalo.morningRate+be*s.buffalo.eveningRate;let r=customerDailyExisting(customerId,date);
-  if(!qty){if(r){db.customerSales=db.customerSales.filter(x=>x.id!==r.id);audit('DELETE','Customer Daily Sale',r.id,r,null);save();}renderCustomerDailyMilk(date);return;}
+  if(!qty){
+    if(r){db.customerSales=db.customerSales.filter(x=>x.id!==r.id);audit('DELETE','Customer Daily Sale',r.id,r,null);save();}
+    if(el){el.value='0';}
+    return;
+  }
   const blendedRate=qty?amount/qty:0;
-  if(r){r.cowMorningQty=cm;r.cowEveningQty=ce;r.buffMorningQty=bm;r.buffEveningQty=be;r.morningQty=cm+bm;r.eveningQty=ce+be;r.qty=qty;r.cowRate=s.cow.rate;r.buffRate=s.buffalo.rate;
+  if(r){
+    r.cowMorningQty=cm;r.cowEveningQty=ce;r.buffMorningQty=bm;r.buffEveningQty=be;r.morningQty=cm+bm;r.eveningQty=ce+be;r.qty=qty;r.cowRate=s.cow.rate;r.buffRate=s.buffalo.rate;
     r.cowMorningRate=s.cow.morningRate;r.cowEveningRate=s.cow.eveningRate;r.buffMorningRate=s.buffalo.morningRate;r.buffEveningRate=s.buffalo.eveningRate;
     r.cowMorningSlabId=s.cow.morningSlabId;r.cowEveningSlabId=s.cow.eveningSlabId;r.buffMorningSlabId=s.buffalo.morningSlabId;r.buffEveningSlabId=s.buffalo.eveningSlabId;r.rate=blendedRate;r.amount=amount;audit('UPDATE','Customer Daily Sale',r.id,null,r);
-  }else{r={id:uid(),customerId,date,productKey:'milk',product:'Milk',cowMorningQty:cm,cowEveningQty:ce,buffMorningQty:bm,buffEveningQty:be,morningQty:cm+bm,eveningQty:ce+be,qty,cowRate:s.cow.rate,buffRate:s.buffalo.rate,
-    cowMorningRate:s.cow.morningRate,cowEveningRate:s.cow.eveningRate,buffMorningRate:s.buffalo.morningRate,buffEveningRate:s.buffalo.eveningRate,cowMorningSlabId:s.cow.morningSlabId,cowEveningSlabId:s.cow.eveningSlabId,buffMorningSlabId:s.buffalo.morningSlabId,buffEveningSlabId:s.buffalo.eveningSlabId,rate:blendedRate,amount,note:''};
-    db.customerSales.push(r);audit('CREATE','Customer Daily Sale',r.id,null,r);}
-  save();renderCustomerDailyMilk(date);
+  }else{
+    r={id:uid(),customerId,date,productKey:'milk',product:'Milk',cowMorningQty:cm,cowEveningQty:ce,buffMorningQty:bm,buffEveningQty:be,morningQty:cm+bm,eveningQty:ce+be,qty,cowRate:s.cow.rate,buffRate:s.buffalo.rate,
+      cowMorningRate:s.cow.morningRate,cowEveningRate:s.cow.eveningRate,buffMorningRate:s.buffalo.morningRate,buffEveningRate:s.buffalo.eveningRate,cowMorningSlabId:s.cow.morningSlabId,cowEveningSlabId:s.cow.eveningSlabId,buffMorningSlabId:s.buffalo.morningSlabId,buffEveningSlabId:s.buffalo.eveningSlabId,rate:blendedRate,amount,note:''};
+    db.customerSales.push(r);audit('CREATE','Customer Daily Sale',r.id,null,r);
+  }
+  save();
+  if(el){el.value=String(el.value||0);el.dataset.savedValue=el.value;}
 }
 function editCustomerDailyMilk(id){
   const r=(db.customerSales||[]).find(x=>x.id===id);if(!r)return;const cust=(db.customers||[]).find(x=>x.id===r.customerId),s=customerMilkSchedule(cust);
