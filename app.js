@@ -31,25 +31,43 @@ async function cloudSync(){
     const base=CLOUD_API.replace(/\/$/,'');
     const token=localStorage.getItem('durga-token')||'';
     const headers={'Content-Type':'application/json','Authorization':'Bearer '+token};
-    const stateRes=await fetch(base+'/api/state?workspaceId='+encodeURIComponent('durga-dairy-'+BUSINESS_ID),{headers});
+    const stateRes=await fetch(base+'/api/state',{headers});
     if(!stateRes.ok)throw new Error('Cloud read failed ('+stateRes.status+')');
     const state=await stateRes.json();
     const remote=state.db||null;
     if(remote){
       const currentUser=db.currentUser;
-      db=mergeCloudDB(db,remote);
+      if(BUSINESS_ID==='akash'){
+        const akash=remote?.settings?.__businesses?.akash;
+        if(akash) db=mergeCloudDB(db,akash);
+      }else{
+        db=mergeCloudDB(db,remote);
+      }
       db.currentUser=currentUser;
       localStorage.setItem(KEY,JSON.stringify(db));
     }
+    let pushDB=db;
+    if(BUSINESS_ID==='akash'){
+      const baseRemote=remote?JSON.parse(JSON.stringify(remote)):{};
+      baseRemote.settings=Object.assign({},baseRemote.settings||{});
+      baseRemote.settings.__businesses=Object.assign({},baseRemote.settings.__businesses||{}, {akash:db});
+      baseRemote.currentUser=null;
+      pushDB=baseRemote;
+    }
     const push=await fetch(base+'/api/sync',{
       method:'POST',headers,
-      body:JSON.stringify({workspaceId:'durga-dairy-'+BUSINESS_ID,db})
+      body:JSON.stringify({workspaceId:'durga-dairy-'+BUSINESS_ID,db:pushDB})
     });
     if(!push.ok)throw new Error('Cloud write failed ('+push.status+')');
     const j=await push.json();
     if(j.db){
       const currentUser=db.currentUser;
-      db=mergeCloudDB(db,j.db);
+      if(BUSINESS_ID==='akash'){
+        const akash=j.db?.settings?.__businesses?.akash;
+        if(akash) db=mergeCloudDB(db,akash);
+      }else{
+        db=mergeCloudDB(db,j.db);
+      }
       db.currentUser=currentUser;
       localStorage.setItem(KEY,JSON.stringify(db));
     }
@@ -63,12 +81,18 @@ async function cloudPull(){
   try{
     const base=CLOUD_API.replace(/\/$/,'');
     const token=localStorage.getItem('durga-token')||'';
-    const r=await fetch(base+'/api/state?workspaceId='+encodeURIComponent('durga-dairy-'+BUSINESS_ID),{headers:{'Authorization':'Bearer '+token,'Cache-Control':'no-cache'}});
+    const r=await fetch(base+'/api/state',{headers:{'Authorization':'Bearer '+token,'Cache-Control':'no-cache'}});
     if(!r.ok)throw new Error('Cloud read failed ('+r.status+')');
     const j=await r.json();
     if(j.db){
       const currentUser=db.currentUser;
-      db=mergeCloudDB(db,j.db);
+      if(BUSINESS_ID==='akash'){
+        const akash=j.db?.settings?.__businesses?.akash;
+        if(!akash)return false;
+        db=mergeCloudDB(db,akash);
+      }else{
+        db=mergeCloudDB(db,j.db);
+      }
       db.currentUser=currentUser;
       localStorage.setItem(KEY,JSON.stringify(db));
       cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
