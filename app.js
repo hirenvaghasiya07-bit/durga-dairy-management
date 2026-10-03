@@ -722,25 +722,25 @@ function deleteGeneric(entity,id){if(entity==='vendorPayments')return alert('Ven
 function render(k){window.__durgaView=k;if(k==='dashboard')dashboard();else if(k==='sales')renderSales();else if(k==='collections')renderCollections();else if(k==='milk')renderMilk();else if(k==='stock')renderStock();else if(k==='expenses')renderExpenses();else if(k==='customers')renderCustomers();else if(k==='vendors')renderVendors();else if(k==='cash')renderCash();else if(k==='reports')renderReports();else if(k==='audit')renderAudit();else if(k==='backup')renderBackup();else if(k==='users')renderUsers()}
 function zeroTwoLogin(){ portalChooser(); }
 async function doZeroTwoLogin(){
-  const email=val('zeroEmail'),password=val('zeroPin');
-  if(!email||!password)return alert('Email and password required.');
-  if(!CLOUD_API)return alert('Zero Two requires the online API.');
-  try{
-    const r=await fetch(CLOUD_API.replace(/\/$/,'')+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password,workspaceId:'durga-dairy-hiren'})});
-    const j=await r.json();
-    if(!r.ok||!j.token)return alert(j.error||'Wrong password.');
-    if(!['Owner','Full Access Member'].includes(j.user?.role))return alert('Zero Two access ફક્ત Full Access માટે છે.');
-    localStorage.setItem('durga-token',j.token);db.currentUser=j.user.id;db.users=[{id:j.user.id,name:j.user.name,email:j.user.email,role:j.user.role,active:true}];save();await zeroTwoLoad();
-  }catch(e){alert('Zero Two login failed: '+e.message)}
+  await zeroTwoLoad();
 }
 async function zeroTwoLoad(){
   try{
-    const r=await fetch(CLOUD_API.replace(/\/$/,'')+'/api/zero-two-state',{headers:{'Cache-Control':'no-cache'}});
-    const j=await r.json();
-    if(!r.ok||!j.hiren||!j.akash)throw new Error(j.error||'Combined data not available');
+    if(!CLOUD_API)throw new Error('Cloud API is not configured');
+    const url=CLOUD_API.replace(/\/$/,'')+'/api/zero-two-state?ts='+Date.now();
+    const r=await fetch(url,{method:'GET',headers:{'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
+    const text=await r.text();
+    let j=null;
+    try{j=JSON.parse(text)}catch(e){
+      const ct=r.headers.get('content-type')||'';
+      throw new Error('API returned '+r.status+' '+(ct||'non-JSON')+' instead of JSON');
+    }
+    if(!r.ok||!j.hiren||!j.akash)throw new Error(j?.error||'Combined data not available');
     window.__zeroTwoData={hiren:j.hiren,akash:j.akash,updatedAt:j.updatedAt||null};
     renderZeroTwo();
-  }catch(e){document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy • All</h1><div class="notice">All data load failed: '+esc(e.message)+'</div><button class="btn orange" onclick="zeroTwoLogin()">Login Again</button><button class="linkbtn" onclick="portalChooser()">Back</button></div></div>'}
+  }catch(e){
+    document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy • All</h1><div class="notice">All data load failed: '+esc(e.message)+'</div><button class="btn orange" onclick="zeroTwoLoad()">Try Again</button><button class="linkbtn" onclick="portalChooser()">Back</button></div></div>'
+  }
 }
 function zeroTwoNum(v){return Number(v||0)}
 function zeroTwoSum(arr,key){return (arr||[]).reduce((a,x)=>a+zeroTwoNum(x?.[key]),0)}
