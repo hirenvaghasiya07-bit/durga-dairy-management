@@ -365,9 +365,29 @@ function akashMilkProfitReportHTML(mode='all',value=''){
   const avgCost=saleableLitres?totalPurchaseCost/saleableLitres:0;
   const slabMap=new Map(akashMilkSlabs().map(x=>[x.id,x]));
   const groups={};
-  sales.forEach(x=>{const rate=num(x.rate),c=(db.customers||[]).find(c=>c.id===x.customerId),slab=slabMap.get(c?.slabId),k=slab?slab.id:'__none__';groups[k]??={slabName:slab?.name||'No Slab',slabPercent:num(slab?.percent),rateMin:Infinity,rateMax:-Infinity,qty:0,sales:0,customers:new Set()};groups[k].qty+=num(x.qty);groups[k].sales+=num(x.amount);groups[k].rateMin=Math.min(groups[k].rateMin,rate);groups[k].rateMax=Math.max(groups[k].rateMax,rate);if(x.customerId)groups[k].customers.add(x.customerId)});
-  const activeBySlab={};(db.customers||[]).filter(c=>c.active!==false).forEach(c=>{const k=c.slabId||'__none__';activeBySlab[k]=(activeBySlab[k]||0)+1});
-  Object.keys(activeBySlab).forEach(k=>{groups[k]??={slabName:slabMap.get(k)?.name||'No Slab',slabPercent:num(slabMap.get(k)?.percent),rateMin:0,rateMax:0,qty:0,sales:0,customers:new Set(),customerCount:0};groups[k].customerCount=activeBySlab[k]||0;});
+  const addSlot=(x,c,qty,rate,slabId)=>{
+    qty=num(qty);if(qty<=0)return;
+    const k=slabId||c?.slabId||'__none__',slab=slabMap.get(k);
+    groups[k]??={slabName:slab?.name||'No Slab',slabPercent:num(slab?.percent),rateMin:Infinity,rateMax:-Infinity,qty:0,sales:0,customers:new Set()};
+    groups[k].qty+=qty;groups[k].sales+=qty*num(rate);groups[k].rateMin=Math.min(groups[k].rateMin,num(rate));groups[k].rateMax=Math.max(groups[k].rateMax,num(rate));if(x.customerId)groups[k].customers.add(x.customerId);
+  };
+  sales.forEach(x=>{
+    const c=(db.customers||[]).find(c=>c.id===x.customerId);
+    addSlot(x,c,x.cowMorningQty,x.cowMorningRate||x.cowRate,x.cowMorningSlabId);
+    addSlot(x,c,x.cowEveningQty,x.cowEveningRate||x.cowRate,x.cowEveningSlabId);
+    addSlot(x,c,x.buffMorningQty,x.buffMorningRate||x.buffRate,x.buffMorningSlabId);
+    addSlot(x,c,x.buffEveningQty,x.buffEveningRate||x.buffRate,x.buffEveningSlabId);
+    if(!x.cowMorningQty&&!x.cowEveningQty&&!x.buffMorningQty&&!x.buffEveningQty)addSlot(x,c,x.qty,x.rate,x.slabId);
+  });
+  const activeBySlab={};
+  (db.customers||[]).filter(c=>c.active!==false).forEach(c=>{
+    const s=customerMilkSchedule(c),ids=[s.cow.morningSlabId,s.cow.eveningSlabId,s.buffalo.morningSlabId,s.buffalo.eveningSlabId].filter(Boolean);
+    [...new Set(ids)].forEach(k=>{activeBySlab[k]??=new Set();activeBySlab[k].add(c.id)});
+  });
+  Object.keys(activeBySlab).forEach(k=>{
+    groups[k]??={slabName:slabMap.get(k)?.name||'No Slab',slabPercent:num(slabMap.get(k)?.percent),rateMin:Infinity,rateMax:-Infinity,qty:0,sales:0,customers:new Set()};
+    for(const id of activeBySlab[k])groups[k].customers.add(id);
+  });
   const rows=Object.values(groups).sort((a,b)=>a.slabPercent-b.slabPercent).map(g=>{g.cost=g.qty*avgCost;g.profit=g.sales-g.cost;g.margin=g.sales?g.profit/g.sales*100:0;g.markup=g.cost?g.profit/g.cost*100:0;g.customerCount=g.customerCount||g.customers.size;return g});
   const totalSales=rows.reduce((a,x)=>a+x.sales,0), totalQty=rows.reduce((a,x)=>a+x.qty,0), totalCost=rows.reduce((a,x)=>a+x.cost,0), totalProfit=totalSales-totalCost;
   const customerCount=new Set(sales.map(x=>x.customerId).filter(Boolean)).size;
