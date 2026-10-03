@@ -258,22 +258,22 @@ function addCustomer(){
       <div class="field span2"><label>Customer Name</label><input id="name"></div>
       <div class="field"><label>Mobile Number</label><input id="mobile"></div>
       <div class="field span4"><label>Address</label><input id="address"></div>
-      <div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="\${iso()}"></div>
+      <div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="${iso()}"></div>
       <div class="field"><label>Status</label><select id="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
       <div class="field span4"><div class="notice"><b>Milk Schedule</b><br>દરેક Morning / Evening entry માટે Quantity, Slab અને Rate અલગથી રાખવામાં આવશે. આ જ schedule Daily Milk Entryમાં automatic આવશે.</div></div>
       <div class="field span4"><div class="card" style="margin:0;padding:12px;border-left:4px solid #2e9d57"><h3 style="margin:0">🐄 Cow Milk</h3></div></div>
       <div class="field"><label>Cow • Morning Quantity (L)</label><input id="cowMorningQty" type="number" step="0.01" value="0"></div>
-      <div class="field"><label>Cow • Morning Slab</label><select id="cowMorningSlab">\${slabOpts}</select></div>
+      <div class="field"><label>Cow • Morning Slab</label><select id="cowMorningSlab">${slabOpts}</select></div>
       <div class="field"><label>Cow • Morning Rate ₹/L</label><input id="cowMorningRate" type="number" step="0.01" placeholder="e.g. 76"></div>
       <div class="field"><label>Cow • Evening Quantity (L)</label><input id="cowEveningQty" type="number" step="0.01" value="0"></div>
-      <div class="field"><label>Cow • Evening Slab</label><select id="cowEveningSlab">\${slabOpts}</select></div>
+      <div class="field"><label>Cow • Evening Slab</label><select id="cowEveningSlab">${slabOpts}</select></div>
       <div class="field"><label>Cow • Evening Rate ₹/L</label><input id="cowEveningRate" type="number" step="0.01" placeholder="e.g. 76"></div>
       <div class="field span4"><div class="card" style="margin:0;padding:12px;border-left:4px solid #2e9d57"><h3 style="margin:0">🐃 Buffalo Milk</h3></div></div>
       <div class="field"><label>Buffalo • Morning Quantity (L)</label><input id="buffMorningQty" type="number" step="0.01" value="0"></div>
-      <div class="field"><label>Buffalo • Morning Slab</label><select id="buffMorningSlab">\${slabOpts}</select></div>
+      <div class="field"><label>Buffalo • Morning Slab</label><select id="buffMorningSlab">${slabOpts}</select></div>
       <div class="field"><label>Buffalo • Morning Rate ₹/L</label><input id="buffMorningRate" type="number" step="0.01" placeholder="e.g. 80"></div>
       <div class="field"><label>Buffalo • Evening Quantity (L)</label><input id="buffEveningQty" type="number" step="0.01" value="0"></div>
-      <div class="field"><label>Buffalo • Evening Slab</label><select id="buffEveningSlab">\${slabOpts}</select></div>
+      <div class="field"><label>Buffalo • Evening Slab</label><select id="buffEveningSlab">${slabOpts}</select></div>
       <div class="field"><label>Buffalo • Evening Rate ₹/L</label><input id="buffEveningRate" type="number" step="0.01" placeholder="e.g. 80"></div>
     </div>\`,()=>{
       const name=val('name').trim();
@@ -294,32 +294,32 @@ function addCustomer(){
     });
     return;
   }
-  modal('Add Customer',`<div class="formgrid"><div class="field span2"><label>Customer Name</label><input id="name"></div><div class="field"><label>Mobile Number</label><input id="mobile"></div><div class="field span2"><label>Address</label><input id="address"></div><div class="field"><label>Product</label><select id="productKey"><option value="milk">Milk</option><option value="buttermilk">Buttermilk</option><option value="ghee">Ghee</option><option value="peda">Peda</option></select></div><div class="field"><label>Selling Price ₹</label><input id="rate" type="number" step="0.01"></div><div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="\${iso()}"></div><div class="field"><label>Status</label><select id="active"><option value="true">Active</option><option value="false">Inactive</option></select></div></div>\`,()=>{const name=val('name').trim();if(!name)return alert('Enter customer name.');if((db.customers||[]).some(x=>String(x.name).trim().toLowerCase()===name.toLowerCase()))return alert('Customer name already exists.');const key=val('productKey'),date=val('effectiveDate')||iso(),rate=num(val('rate'));const r={id:uid(),name,mobile:val('mobile'),address:val('address'),product:saleProducts().find(x=>x.key===key)?.name||'Milk',saleKey:key,active:val('active')!=='false',priceHistory:[{id:uid(),productKey:key,date,rate}],createdAt:new Date().toISOString()};db.customers.push(r);audit('CREATE','Customer',r.id,null,r);save();closeModal();render('customers')})}
+  modal('Add Customer',`<div class="formgrid"><div class="field span2"><label>Customer Name</label><input id="name"></div><div class="field"><label>Mobile Number</label><input id="mobile"></div><div class="field span2"><label>Address</label><input id="address"></div><div class="field"><label>Product</label><select id="productKey"><option value="milk">Milk</option><option value="buttermilk">Buttermilk</option><option value="ghee">Ghee</option><option value="peda">Peda</option></select></div><div class="field"><label>Selling Price ₹</label><input id="rate" type="number" step="0.01"></div><div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="${iso()}"></div><div class="field"><label>Status</label><select id="active"><option value="true">Active</option><option value="false">Inactive</option></select></div></div>\`,()=>{const name=val('name').trim();if(!name)return alert('Enter customer name.');if((db.customers||[]).some(x=>String(x.name).trim().toLowerCase()===name.toLowerCase()))return alert('Customer name already exists.');const key=val('productKey'),date=val('effectiveDate')||iso(),rate=num(val('rate'));const r={id:uid(),name,mobile:val('mobile'),address:val('address'),product:saleProducts().find(x=>x.key===key)?.name||'Milk',saleKey:key,active:val('active')!=='false',priceHistory:[{id:uid(),productKey:key,date,rate}],createdAt:new Date().toISOString()};db.customers.push(r);audit('CREATE','Customer',r.id,null,r);save();closeModal();render('customers')})}
 function editCustomer(id){
   const c=(db.customers||[]).find(x=>x.id===id);if(!c)return;
   if(isAkash()){
     const s=customerMilkSchedule(c),slabOpts=(selected)=>akashSlabOptions(selected||'');
     modal('Akash • Edit Milk Customer',`<div class="formgrid">
-      <div class="field span2"><label>Customer Name</label><input value="\${esc(c.name||'')}" readonly></div>
-      <div class="field"><label>Mobile Number</label><input id="mobile" value="\${esc(c.mobile||'')}"></div>
-      <div class="field span4"><label>Address</label><input id="address" value="\${esc(c.address||'')}"></div>
-      <div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="\${iso()}"></div>
-      <div class="field"><label>Status</label><select id="active"><option value="true" \${c.active!==false?'selected':''}>Active</option><option value="false" \${c.active===false?'selected':''}>Inactive</option></select></div>
+      <div class="field span2"><label>Customer Name</label><input value="${esc(c.name||'')}" readonly></div>
+      <div class="field"><label>Mobile Number</label><input id="mobile" value="${esc(c.mobile||'')}"></div>
+      <div class="field span4"><label>Address</label><input id="address" value="${esc(c.address||'')}"></div>
+      <div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="${iso()}"></div>
+      <div class="field"><label>Status</label><select id="active"><option value="true" ${c.active!==false?'selected':''}>Active</option><option value="false" ${c.active===false?'selected':''}>Inactive</option></select></div>
       <div class="field span4"><div class="notice"><b>Milk Schedule</b><br>Morning / Evening માટે Quantity, Slab અને Rate અલગથી રાખવામાં આવશે. Future Daily Milk Entry આ schedule પ્રમાણે auto-fill થશે.</div></div>
       <div class="field span4"><div class="card" style="margin:0;padding:12px;border-left:4px solid #2e9d57"><h3 style="margin:0">🐄 Cow Milk</h3></div></div>
-      <div class="field"><label>Cow • Morning Quantity (L)</label><input id="cowMorningQty" type="number" step="0.01" value="\${num(s.cow.morning)}"></div>
-      <div class="field"><label>Cow • Morning Slab</label><select id="cowMorningSlab">\${slabOpts(s.cow.morningSlabId)}</select></div>
-      <div class="field"><label>Cow • Morning Rate ₹/L</label><input id="cowMorningRate" type="number" step="0.01" value="\${num(s.cow.morningRate)}"></div>
-      <div class="field"><label>Cow • Evening Quantity (L)</label><input id="cowEveningQty" type="number" step="0.01" value="\${num(s.cow.evening)}"></div>
-      <div class="field"><label>Cow • Evening Slab</label><select id="cowEveningSlab">\${slabOpts(s.cow.eveningSlabId)}</select></div>
-      <div class="field"><label>Cow • Evening Rate ₹/L</label><input id="cowEveningRate" type="number" step="0.01" value="\${num(s.cow.eveningRate)}"></div>
+      <div class="field"><label>Cow • Morning Quantity (L)</label><input id="cowMorningQty" type="number" step="0.01" value="${num(s.cow.morning)}"></div>
+      <div class="field"><label>Cow • Morning Slab</label><select id="cowMorningSlab">${slabOpts(s.cow.morningSlabId)}</select></div>
+      <div class="field"><label>Cow • Morning Rate ₹/L</label><input id="cowMorningRate" type="number" step="0.01" value="${num(s.cow.morningRate)}"></div>
+      <div class="field"><label>Cow • Evening Quantity (L)</label><input id="cowEveningQty" type="number" step="0.01" value="${num(s.cow.evening)}"></div>
+      <div class="field"><label>Cow • Evening Slab</label><select id="cowEveningSlab">${slabOpts(s.cow.eveningSlabId)}</select></div>
+      <div class="field"><label>Cow • Evening Rate ₹/L</label><input id="cowEveningRate" type="number" step="0.01" value="${num(s.cow.eveningRate)}"></div>
       <div class="field span4"><div class="card" style="margin:0;padding:12px;border-left:4px solid #2e9d57"><h3 style="margin:0">🐃 Buffalo Milk</h3></div></div>
-      <div class="field"><label>Buffalo • Morning Quantity (L)</label><input id="buffMorningQty" type="number" step="0.01" value="\${num(s.buffalo.morning)}"></div>
-      <div class="field"><label>Buffalo • Morning Slab</label><select id="buffMorningSlab">\${slabOpts(s.buffalo.morningSlabId)}</select></div>
-      <div class="field"><label>Buffalo • Morning Rate ₹/L</label><input id="buffMorningRate" type="number" step="0.01" value="\${num(s.buffalo.morningRate)}"></div>
-      <div class="field"><label>Buffalo • Evening Quantity (L)</label><input id="buffEveningQty" type="number" step="0.01" value="\${num(s.buffalo.evening)}"></div>
-      <div class="field"><label>Buffalo • Evening Slab</label><select id="buffEveningSlab">\${slabOpts(s.buffalo.eveningSlabId)}</select></div>
-      <div class="field"><label>Buffalo • Evening Rate ₹/L</label><input id="buffEveningRate" type="number" step="0.01" value="\${num(s.buffalo.eveningRate)}"></div>
+      <div class="field"><label>Buffalo • Morning Quantity (L)</label><input id="buffMorningQty" type="number" step="0.01" value="${num(s.buffalo.morning)}"></div>
+      <div class="field"><label>Buffalo • Morning Slab</label><select id="buffMorningSlab">${slabOpts(s.buffalo.morningSlabId)}</select></div>
+      <div class="field"><label>Buffalo • Morning Rate ₹/L</label><input id="buffMorningRate" type="number" step="0.01" value="${num(s.buffalo.morningRate)}"></div>
+      <div class="field"><label>Buffalo • Evening Quantity (L)</label><input id="buffEveningQty" type="number" step="0.01" value="${num(s.buffalo.evening)}"></div>
+      <div class="field"><label>Buffalo • Evening Slab</label><select id="buffEveningSlab">${slabOpts(s.buffalo.eveningSlabId)}</select></div>
+      <div class="field"><label>Buffalo • Evening Rate ₹/L</label><input id="buffEveningRate" type="number" step="0.01" value="${num(s.buffalo.eveningRate)}"></div>
     </div>\`,()=>{
       c.mobile=val('mobile');c.address=val('address');c.active=val('active')!=='false';
       const date=val('effectiveDate')||iso();
@@ -335,7 +335,7 @@ function editCustomer(id){
     });
     return;
   }
-  const key=c.saleKey||'milk',rate=customerRateFor(c,key,iso());modal('Edit Customer',`<div class="formgrid"><div class="field span2"><label>Customer Name</label><input value="\${esc(c.name||'')}" readonly></div><div class="field"><label>Mobile Number</label><input id="mobile" value="\${esc(c.mobile||'')}"></div><div class="field span2"><label>Address</label><input id="address" value="\${esc(c.address||'')}"></div><div class="field"><label>Product</label><select id="productKey">\${saleProducts().filter(p=>p.key!=='other').map(p=>`<option value="\${p.key}" \${p.key===key?'selected':''}>\${esc(p.name)}</option>`).join('')}</select></div><div class="field"><label>New Selling Price ₹</label><input id="rate" type="number" step="0.01" value="\${rate}"></div><div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="\${iso()}"></div><div class="field"><label>Status</label><select id="active"><option value="true" \${c.active!==false?'selected':''}>Active</option><option value="false" \${c.active===false?'selected':''}>Inactive</option></select></div></div>\`,()=>{c.mobile=val('mobile');c.address=val('address');const nk=val('productKey'),nd=val('effectiveDate')||iso(),nr=num(val('rate'));c.saleKey=nk;c.product=saleProducts().find(x=>x.key===nk)?.name||c.product;c.active=val('active')!=='false';addCustomerPriceHistory(c,nk,nd,nr);audit('UPDATE','Customer',c.id,null,c);save();closeModal();render('customers')})}
+  const key=c.saleKey||'milk',rate=customerRateFor(c,key,iso());modal('Edit Customer',`<div class="formgrid"><div class="field span2"><label>Customer Name</label><input value="${esc(c.name||'')}" readonly></div><div class="field"><label>Mobile Number</label><input id="mobile" value="${esc(c.mobile||'')}"></div><div class="field span2"><label>Address</label><input id="address" value="${esc(c.address||'')}"></div><div class="field"><label>Product</label><select id="productKey">${saleProducts().filter(p=>p.key!=='other').map(p=>'<option value="'+p.key+'" '+(p.key===key?'selected':'')+'>'+esc(p.name)+'</option>').join('')}</select></div><div class="field"><label>New Selling Price ₹</label><input id="rate" type="number" step="0.01" value="${rate}"></div><div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="${iso()}"></div><div class="field"><label>Status</label><select id="active"><option value="true" ${c.active!==false?'selected':''}>Active</option><option value="false" ${c.active===false?'selected':''}>Inactive</option></select></div></div>\`,()=>{c.mobile=val('mobile');c.address=val('address');const nk=val('productKey'),nd=val('effectiveDate')||iso(),nr=num(val('rate'));c.saleKey=nk;c.product=saleProducts().find(x=>x.key===nk)?.name||c.product;c.active=val('active')!=='false';addCustomerPriceHistory(c,nk,nd,nr);audit('UPDATE','Customer',c.id,null,c);save();closeModal();render('customers')})}
 function addVendor(){
   if(isAkash()){
     modal('Akash • Milk Vendor',`<div class="formgrid"><div class="field span2"><label>Vendor Name</label><input id="name"></div><div class="field"><label>Phone</label><input id="phone"></div><div class="field span4"><div class="notice">Akash portalમાં Vendor માત્ર Milk purchase માટે રહેશે.</div></div></div>`,()=>{const r={id:uid(),name:val('name'),type:'Milk',phone:val('phone')};if(!r.name)return alert('Enter vendor name.');db.vendors.push(r);audit('CREATE','Vendor',r.id,null,r);save();closeModal();render('vendors')});
