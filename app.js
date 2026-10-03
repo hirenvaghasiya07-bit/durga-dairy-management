@@ -246,69 +246,96 @@ function addUsage(){modal('Stock Usage / Sale Adjustment',`<div class="formgrid"
 function akashMilkSlabs(){db.milkSlabs=Array.isArray(db.milkSlabs)?db.milkSlabs:[];return db.milkSlabs;}
 function addMilkSlab(){const slabs=akashMilkSlabs();modal('Akash • Add Milk Selling Slab',`<div class="formgrid"><div class="field span2"><label>Slab Name</label><input id="name" placeholder="e.g. 25%"></div><div class="field"><label>Slab %</label><input id="percent" type="number" step="0.01" placeholder="25"></div><div class="field span4"><div class="notice">આ % માત્ર Slab classification માટે છે. Customerનું actual Selling Price અલગથી રાખી શકાશે.</div></div></div>`,()=>{const percent=num(val('percent')),name=val('name').trim()||((percent%1===0?percent:percent.toFixed(2))+'%');if(percent<0)return alert('Slab % cannot be negative.');if(slabs.some(x=>String(x.name).toLowerCase()===name.toLowerCase()))return alert('This slab already exists.');const r={id:uid(),name,percent};slabs.push(r);audit('CREATE','Milk Selling Slab',r.id,null,r);save();closeModal();render('customers')});}
 function renderMilkSlabs(){if(!isAkash())return render('customers');const slabs=akashMilkSlabs().slice().sort((a,b)=>num(a.percent)-num(b.percent));const rows=slabs.map(x=>'<tr><td><b>'+esc(x.name)+'</b></td><td>'+num(x.percent).toFixed(2)+'%</td><td>'+((db.customers||[]).filter(c=>c.slabId===x.id&&c.active!==false).length)+'</td></tr>').join('')||'<tr><td colspan="3" class="empty">No slabs.</td></tr>';shell('customers','<div class="sectionhead"><div><h1>Milk Selling Slabs</h1><div class="muted">Manual slab master. Add any slabs you need, such as 0%, 15%, 25%, 30%.</div></div><div class="toolbar"><button class="btn" onclick="addMilkSlab()">+ Add Slab</button><button class="btn gray" onclick="render(\'customers\')">Back to Customers</button></div></div><div class="card section"><div class="tablewrap"><table class="table"><tr><th>Slab</th><th>Percentage</th><th>Active Customers</th></tr>'+rows+'</table></div></div>','Milk Selling Slabs');}
+
+function akashSlabOptions(selected=''){
+  return akashMilkSlabs().slice().sort((a,b)=>num(a.percent)-num(b.percent))
+    .map(x=>'<option value="'+x.id+'" '+(x.id===selected?'selected':'')+'>'+esc(x.name)+'</option>').join('');
+}
 function addCustomer(){
   if(isAkash()){
+    const slabOpts=akashSlabOptions();
     modal('Akash • New Milk Customer',`<div class="formgrid">
       <div class="field span2"><label>Customer Name</label><input id="name"></div>
       <div class="field"><label>Mobile Number</label><input id="mobile"></div>
-      <div class="field span2"><label>Address</label><input id="address"></div>
-      <div class="field"><label>Milk Slab</label><select id="slabId">${akashMilkSlabs().slice().sort((a,b)=>num(a.percent)-num(b.percent)).map(x=>'<option value="'+x.id+'">'+esc(x.name)+'</option>').join('')}</select></div>
-      <div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="${iso()}"></div>
-      <div class="field span4"><div class="notice">Customer માટે રોજની default Milk Schedule અહીં સેટ કરો. Daily Entryમાં આ quantities આપમેળે આવશે. રજા હોય તે દિવસે માત્ર 0 કરો.</div></div>
-      <div class="field"><label>Cow Milk Rate ₹/L</label><input id="cowRate" type="number" step="0.01" placeholder="e.g. 76"></div>
-      <div class="field"><label>Cow Morning (L)</label><input id="cowMorning" type="number" step="0.01" value="0"></div>
-      <div class="field"><label>Cow Evening (L)</label><input id="cowEvening" type="number" step="0.01" value="0"></div>
-      <div class="field"><label>Buffalo Milk Rate ₹/L</label><input id="buffRate" type="number" step="0.01" placeholder="e.g. 80"></div>
-      <div class="field"><label>Buffalo Morning (L)</label><input id="buffMorning" type="number" step="0.01" value="0"></div>
-      <div class="field"><label>Buffalo Evening (L)</label><input id="buffEvening" type="number" step="0.01" value="0"></div>
+      <div class="field span4"><label>Address</label><input id="address"></div>
+      <div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="\${iso()}"></div>
       <div class="field"><label>Status</label><select id="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
-    </div>`,()=>{
+      <div class="field span4"><div class="notice"><b>Milk Schedule</b><br>દરેક Morning / Evening entry માટે Quantity, Slab અને Rate અલગથી રાખવામાં આવશે. આ જ schedule Daily Milk Entryમાં automatic આવશે.</div></div>
+      <div class="field span4"><div class="card" style="margin:0;padding:12px;border-left:4px solid #2e9d57"><h3 style="margin:0">🐄 Cow Milk</h3></div></div>
+      <div class="field"><label>Cow • Morning Quantity (L)</label><input id="cowMorningQty" type="number" step="0.01" value="0"></div>
+      <div class="field"><label>Cow • Morning Slab</label><select id="cowMorningSlab">\${slabOpts}</select></div>
+      <div class="field"><label>Cow • Morning Rate ₹/L</label><input id="cowMorningRate" type="number" step="0.01" placeholder="e.g. 76"></div>
+      <div class="field"><label>Cow • Evening Quantity (L)</label><input id="cowEveningQty" type="number" step="0.01" value="0"></div>
+      <div class="field"><label>Cow • Evening Slab</label><select id="cowEveningSlab">\${slabOpts}</select></div>
+      <div class="field"><label>Cow • Evening Rate ₹/L</label><input id="cowEveningRate" type="number" step="0.01" placeholder="e.g. 76"></div>
+      <div class="field span4"><div class="card" style="margin:0;padding:12px;border-left:4px solid #2e9d57"><h3 style="margin:0">🐃 Buffalo Milk</h3></div></div>
+      <div class="field"><label>Buffalo • Morning Quantity (L)</label><input id="buffMorningQty" type="number" step="0.01" value="0"></div>
+      <div class="field"><label>Buffalo • Morning Slab</label><select id="buffMorningSlab">\${slabOpts}</select></div>
+      <div class="field"><label>Buffalo • Morning Rate ₹/L</label><input id="buffMorningRate" type="number" step="0.01" placeholder="e.g. 80"></div>
+      <div class="field"><label>Buffalo • Evening Quantity (L)</label><input id="buffEveningQty" type="number" step="0.01" value="0"></div>
+      <div class="field"><label>Buffalo • Evening Slab</label><select id="buffEveningSlab">\${slabOpts}</select></div>
+      <div class="field"><label>Buffalo • Evening Rate ₹/L</label><input id="buffEveningRate" type="number" step="0.01" placeholder="e.g. 80"></div>
+    </div>\`,()=>{
       const name=val('name').trim();
       if(!name)return alert('Enter customer name.');
       if((db.customers||[]).some(x=>String(x.name).trim().toLowerCase()===name.toLowerCase()))return alert('Customer name already exists.');
       const date=val('effectiveDate')||iso();
-      const r={id:uid(),name,mobile:val('mobile'),address:val('address'),product:'Milk',saleKey:'milk',slabId:val('slabId'),active:val('active')!=='false',
-        cowRate:num(val('cowRate')),cowMorning:num(val('cowMorning')),cowEvening:num(val('cowEvening')),
-        buffRate:num(val('buffRate')),buffMorning:num(val('buffMorning')),buffEvening:num(val('buffEvening')),
-        milkSchedule:{cow:{rate:num(val('cowRate')),morning:num(val('cowMorning')),evening:num(val('cowEvening'))},buffalo:{rate:num(val('buffRate')),morning:num(val('buffMorning')),evening:num(val('buffEvening'))}},
+      const cm={qty:num(val('cowMorningQty')),slabId:val('cowMorningSlab'),rate:num(val('cowMorningRate'))};
+      const ce={qty:num(val('cowEveningQty')),slabId:val('cowEveningSlab'),rate:num(val('cowEveningRate'))};
+      const bm={qty:num(val('buffMorningQty')),slabId:val('buffMorningSlab'),rate:num(val('buffMorningRate'))};
+      const be={qty:num(val('buffEveningQty')),slabId:val('buffEveningSlab'),rate:num(val('buffEveningRate'))};
+      const r={id:uid(),name,mobile:val('mobile'),address:val('address'),product:'Milk',saleKey:'milk',
+        slabId:cm.slabId||ce.slabId||bm.slabId||be.slabId||'',active:val('active')!=='false',
+        cowRate:cm.rate||ce.rate,cowMorning:cm.qty,cowEvening:ce.qty,buffRate:bm.rate||be.rate,buffMorning:bm.qty,buffEvening:be.qty,
+        milkSchedule:{cow:{morning:cm,evening:ce,rate:cm.rate||ce.rate},buffalo:{morning:bm,evening:be,rate:bm.rate||be.rate}},
         priceHistory:[],createdAt:new Date().toISOString()};
-      const defaultRate=r.cowRate||r.buffRate||0;
-      if(defaultRate)r.priceHistory.push({id:uid(),productKey:'milk',date,rate:defaultRate});
+      const defaultRate=r.cowRate||r.buffRate||0;if(defaultRate)r.priceHistory.push({id:uid(),productKey:'milk',date,rate:defaultRate});
       db.customers.push(r);audit('CREATE','Customer',r.id,null,r);save();closeModal();render('customers');
     });
     return;
   }
-  modal('Add Customer',`<div class="formgrid"><div class="field span2"><label>Customer Name</label><input id="name"></div><div class="field"><label>Mobile Number</label><input id="mobile"></div><div class="field span2"><label>Address</label><input id="address"></div><div class="field"><label>Product</label><select id="productKey"><option value="milk">Milk</option><option value="buttermilk">Buttermilk</option><option value="ghee">Ghee</option><option value="peda">Peda</option></select></div><div class="field"><label>Selling Price ₹</label><input id="rate" type="number" step="0.01"></div><div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="${iso()}"></div><div class="field"><label>Status</label><select id="active"><option value="true">Active</option><option value="false">Inactive</option></select></div></div>`,()=>{const name=val('name').trim();if(!name)return alert('Enter customer name.');if((db.customers||[]).some(x=>String(x.name).trim().toLowerCase()===name.toLowerCase()))return alert('Customer name already exists.');const key=val('productKey'),date=val('effectiveDate')||iso(),rate=num(val('rate'));const r={id:uid(),name,mobile:val('mobile'),address:val('address'),product:saleProducts().find(x=>x.key===key)?.name||'Milk',saleKey:key,active:val('active')!=='false',priceHistory:[{id:uid(),productKey:key,date,rate}],createdAt:new Date().toISOString()};db.customers.push(r);audit('CREATE','Customer',r.id,null,r);save();closeModal();render('customers')})}
+  modal('Add Customer',`<div class="formgrid"><div class="field span2"><label>Customer Name</label><input id="name"></div><div class="field"><label>Mobile Number</label><input id="mobile"></div><div class="field span2"><label>Address</label><input id="address"></div><div class="field"><label>Product</label><select id="productKey"><option value="milk">Milk</option><option value="buttermilk">Buttermilk</option><option value="ghee">Ghee</option><option value="peda">Peda</option></select></div><div class="field"><label>Selling Price ₹</label><input id="rate" type="number" step="0.01"></div><div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="\${iso()}"></div><div class="field"><label>Status</label><select id="active"><option value="true">Active</option><option value="false">Inactive</option></select></div></div>\`,()=>{const name=val('name').trim();if(!name)return alert('Enter customer name.');if((db.customers||[]).some(x=>String(x.name).trim().toLowerCase()===name.toLowerCase()))return alert('Customer name already exists.');const key=val('productKey'),date=val('effectiveDate')||iso(),rate=num(val('rate'));const r={id:uid(),name,mobile:val('mobile'),address:val('address'),product:saleProducts().find(x=>x.key===key)?.name||'Milk',saleKey:key,active:val('active')!=='false',priceHistory:[{id:uid(),productKey:key,date,rate}],createdAt:new Date().toISOString()};db.customers.push(r);audit('CREATE','Customer',r.id,null,r);save();closeModal();render('customers')})}
 function editCustomer(id){
   const c=(db.customers||[]).find(x=>x.id===id);if(!c)return;
   if(isAkash()){
-    const s=c.milkSchedule||{cow:{rate:num(c.cowRate),morning:num(c.cowMorning),evening:num(c.cowEvening)},buffalo:{rate:num(c.buffRate),morning:num(c.buffMorning),evening:num(c.buffEvening)}};
+    const s=customerMilkSchedule(c),slabOpts=(selected)=>akashSlabOptions(selected||'');
     modal('Akash • Edit Milk Customer',`<div class="formgrid">
-      <div class="field span2"><label>Customer Name</label><input value="${esc(c.name||'')}" readonly></div>
-      <div class="field"><label>Mobile Number</label><input id="mobile" value="${esc(c.mobile||'')}"></div>
-      <div class="field span2"><label>Address</label><input id="address" value="${esc(c.address||'')}"></div>
-      <div class="field"><label>Milk Slab</label><select id="slabId">${akashMilkSlabs().slice().sort((a,b)=>num(a.percent)-num(b.percent)).map(x=>'<option value="'+x.id+'" '+(x.id===c.slabId?'selected':'')+'>'+esc(x.name)+'</option>').join('')}</select></div>
-      <div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="${iso()}"></div>
-      <div class="field span4"><div class="notice">આ schedule રોજ Daily Milk Entryમાં default આવશે. રજા હોય ત્યારે તે દિવસની quantity 0 કરી શકશો.</div></div>
-      <div class="field"><label>Cow Milk Rate ₹/L</label><input id="cowRate" type="number" step="0.01" value="${num(s.cow.rate)}"></div>
-      <div class="field"><label>Cow Morning (L)</label><input id="cowMorning" type="number" step="0.01" value="${num(s.cow.morning)}"></div>
-      <div class="field"><label>Cow Evening (L)</label><input id="cowEvening" type="number" step="0.01" value="${num(s.cow.evening)}"></div>
-      <div class="field"><label>Buffalo Milk Rate ₹/L</label><input id="buffRate" type="number" step="0.01" value="${num(s.buffalo.rate)}"></div>
-      <div class="field"><label>Buffalo Morning (L)</label><input id="buffMorning" type="number" step="0.01" value="${num(s.buffalo.morning)}"></div>
-      <div class="field"><label>Buffalo Evening (L)</label><input id="buffEvening" type="number" step="0.01" value="${num(s.buffalo.evening)}"></div>
-      <div class="field"><label>Status</label><select id="active"><option value="true" ${c.active!==false?'selected':''}>Active</option><option value="false" ${c.active===false?'selected':''}>Inactive</option></select></div>
-    </div>`,()=>{
-      c.mobile=val('mobile');c.address=val('address');c.slabId=val('slabId');c.active=val('active')!=='false';
+      <div class="field span2"><label>Customer Name</label><input value="\${esc(c.name||'')}" readonly></div>
+      <div class="field"><label>Mobile Number</label><input id="mobile" value="\${esc(c.mobile||'')}"></div>
+      <div class="field span4"><label>Address</label><input id="address" value="\${esc(c.address||'')}"></div>
+      <div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="\${iso()}"></div>
+      <div class="field"><label>Status</label><select id="active"><option value="true" \${c.active!==false?'selected':''}>Active</option><option value="false" \${c.active===false?'selected':''}>Inactive</option></select></div>
+      <div class="field span4"><div class="notice"><b>Milk Schedule</b><br>Morning / Evening માટે Quantity, Slab અને Rate અલગથી રાખવામાં આવશે. Future Daily Milk Entry આ schedule પ્રમાણે auto-fill થશે.</div></div>
+      <div class="field span4"><div class="card" style="margin:0;padding:12px;border-left:4px solid #2e9d57"><h3 style="margin:0">🐄 Cow Milk</h3></div></div>
+      <div class="field"><label>Cow • Morning Quantity (L)</label><input id="cowMorningQty" type="number" step="0.01" value="\${num(s.cow.morning)}"></div>
+      <div class="field"><label>Cow • Morning Slab</label><select id="cowMorningSlab">\${slabOpts(s.cow.morningSlabId)}</select></div>
+      <div class="field"><label>Cow • Morning Rate ₹/L</label><input id="cowMorningRate" type="number" step="0.01" value="\${num(s.cow.morningRate)}"></div>
+      <div class="field"><label>Cow • Evening Quantity (L)</label><input id="cowEveningQty" type="number" step="0.01" value="\${num(s.cow.evening)}"></div>
+      <div class="field"><label>Cow • Evening Slab</label><select id="cowEveningSlab">\${slabOpts(s.cow.eveningSlabId)}</select></div>
+      <div class="field"><label>Cow • Evening Rate ₹/L</label><input id="cowEveningRate" type="number" step="0.01" value="\${num(s.cow.eveningRate)}"></div>
+      <div class="field span4"><div class="card" style="margin:0;padding:12px;border-left:4px solid #2e9d57"><h3 style="margin:0">🐃 Buffalo Milk</h3></div></div>
+      <div class="field"><label>Buffalo • Morning Quantity (L)</label><input id="buffMorningQty" type="number" step="0.01" value="\${num(s.buffalo.morning)}"></div>
+      <div class="field"><label>Buffalo • Morning Slab</label><select id="buffMorningSlab">\${slabOpts(s.buffalo.morningSlabId)}</select></div>
+      <div class="field"><label>Buffalo • Morning Rate ₹/L</label><input id="buffMorningRate" type="number" step="0.01" value="\${num(s.buffalo.morningRate)}"></div>
+      <div class="field"><label>Buffalo • Evening Quantity (L)</label><input id="buffEveningQty" type="number" step="0.01" value="\${num(s.buffalo.evening)}"></div>
+      <div class="field"><label>Buffalo • Evening Slab</label><select id="buffEveningSlab">\${slabOpts(s.buffalo.eveningSlabId)}</select></div>
+      <div class="field"><label>Buffalo • Evening Rate ₹/L</label><input id="buffEveningRate" type="number" step="0.01" value="\${num(s.buffalo.eveningRate)}"></div>
+    </div>\`,()=>{
+      c.mobile=val('mobile');c.address=val('address');c.active=val('active')!=='false';
       const date=val('effectiveDate')||iso();
-      c.cowRate=num(val('cowRate'));c.cowMorning=num(val('cowMorning'));c.cowEvening=num(val('cowEvening'));
-      c.buffRate=num(val('buffRate'));c.buffMorning=num(val('buffMorning'));c.buffEvening=num(val('buffEvening'));
-      c.milkSchedule={cow:{rate:c.cowRate,morning:c.cowMorning,evening:c.cowEvening},buffalo:{rate:c.buffRate,morning:c.buffMorning,evening:c.buffEvening}};
+      const cm={qty:num(val('cowMorningQty')),slabId:val('cowMorningSlab'),rate:num(val('cowMorningRate'))};
+      const ce={qty:num(val('cowEveningQty')),slabId:val('cowEveningSlab'),rate:num(val('cowEveningRate'))};
+      const bm={qty:num(val('buffMorningQty')),slabId:val('buffMorningSlab'),rate:num(val('buffMorningRate'))};
+      const be={qty:num(val('buffEveningQty')),slabId:val('buffEveningSlab'),rate:num(val('buffEveningRate'))};
+      c.slabId=cm.slabId||ce.slabId||bm.slabId||be.slabId||c.slabId||'';
+      c.cowRate=cm.rate||ce.rate;c.cowMorning=cm.qty;c.cowEvening=ce.qty;c.buffRate=bm.rate||be.rate;c.buffMorning=bm.qty;c.buffEvening=be.qty;
+      c.milkSchedule={cow:{morning:cm,evening:ce,rate:c.cowRate},buffalo:{morning:bm,evening:be,rate:c.buffRate}};
       const defaultRate=c.cowRate||c.buffRate||0;if(defaultRate)addCustomerPriceHistory(c,'milk',date,defaultRate);
       audit('UPDATE','Customer',c.id,null,c);save();closeModal();render('customers');
     });
     return;
   }
-  const key=c.saleKey||'milk',rate=customerRateFor(c,key,iso());modal('Edit Customer',`<div class="formgrid"><div class="field span2"><label>Customer Name</label><input value="${esc(c.name||'')}" readonly></div><div class="field"><label>Mobile Number</label><input id="mobile" value="${esc(c.mobile||'')}"></div><div class="field span2"><label>Address</label><input id="address" value="${esc(c.address||'')}"></div><div class="field"><label>Product</label><select id="productKey">${saleProducts().filter(p=>p.key!=='other').map(p=>`<option value="${p.key}" ${p.key===key?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div><div class="field"><label>New Selling Price ₹</label><input id="rate" type="number" step="0.01" value="${rate}"></div><div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="${iso()}"></div><div class="field"><label>Status</label><select id="active"><option value="true" ${c.active!==false?'selected':''}>Active</option><option value="false" ${c.active===false?'selected':''}>Inactive</option></select></div></div>`,()=>{c.mobile=val('mobile');c.address=val('address');const nk=val('productKey'),nd=val('effectiveDate')||iso(),nr=num(val('rate'));c.saleKey=nk;c.product=saleProducts().find(x=>x.key===nk)?.name||c.product;c.active=val('active')!=='false';addCustomerPriceHistory(c,nk,nd,nr);audit('UPDATE','Customer',c.id,null,c);save();closeModal();render('customers')})}
+  const key=c.saleKey||'milk',rate=customerRateFor(c,key,iso());modal('Edit Customer',`<div class="formgrid"><div class="field span2"><label>Customer Name</label><input value="\${esc(c.name||'')}" readonly></div><div class="field"><label>Mobile Number</label><input id="mobile" value="\${esc(c.mobile||'')}"></div><div class="field span2"><label>Address</label><input id="address" value="\${esc(c.address||'')}"></div><div class="field"><label>Product</label><select id="productKey">\${saleProducts().filter(p=>p.key!=='other').map(p=>`<option value="\${p.key}" \${p.key===key?'selected':''}>\${esc(p.name)}</option>`).join('')}</select></div><div class="field"><label>New Selling Price ₹</label><input id="rate" type="number" step="0.01" value="\${rate}"></div><div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="\${iso()}"></div><div class="field"><label>Status</label><select id="active"><option value="true" \${c.active!==false?'selected':''}>Active</option><option value="false" \${c.active===false?'selected':''}>Inactive</option></select></div></div>\`,()=>{c.mobile=val('mobile');c.address=val('address');const nk=val('productKey'),nd=val('effectiveDate')||iso(),nr=num(val('rate'));c.saleKey=nk;c.product=saleProducts().find(x=>x.key===nk)?.name||c.product;c.active=val('active')!=='false';addCustomerPriceHistory(c,nk,nd,nr);audit('UPDATE','Customer',c.id,null,c);save();closeModal();render('customers')})}
 function addVendor(){
   if(isAkash()){
     modal('Akash • Milk Vendor',`<div class="formgrid"><div class="field span2"><label>Vendor Name</label><input id="name"></div><div class="field"><label>Phone</label><input id="phone"></div><div class="field span4"><div class="notice">Akash portalમાં Vendor માત્ર Milk purchase માટે રહેશે.</div></div></div>`,()=>{const r={id:uid(),name:val('name'),type:'Milk',phone:val('phone')};if(!r.name)return alert('Enter vendor name.');db.vendors.push(r);audit('CREATE','Vendor',r.id,null,r);save();closeModal();render('vendors')});
@@ -364,55 +391,71 @@ function customerMonthSummary(id,month){const sales=(db.customerSales||[]).filte
 function customerBalanceBefore(id,month){let bill=0,paid=0,adjust=0;(db.customerSales||[]).filter(x=>x.customerId===id&&ym(x.date)<month).forEach(x=>bill+=num(x.amount));(db.customerPayments||[]).filter(x=>x.customerId===id&&x.month<month).forEach(x=>{paid+=num(x.amount);adjust+=num(x.adjustment)});return Math.max(0,bill-paid-adjust)}
 function customerAging(c){const sums=customerMonths(c.id).map(m=>customerMonthSummary(c.id,m)),unpaid=sums.filter(x=>x.bill>0&&x.balance>0);return{unpaidCount:unpaid.length,outstanding:unpaid.reduce((a,x)=>a+x.balance,0),current:sums.find(x=>x.month===ym(iso()))||{bill:0,paid:0,adjust:0,balance:0}}}
 function customerDailyExisting(customerId,date){return (db.customerSales||[]).find(x=>x.customerId===customerId&&x.date===date&&x.productKey==='milk')}
+
 function customerMilkSchedule(c){
-  const s=c?.milkSchedule||{cow:{rate:num(c?.cowRate),morning:num(c?.cowMorning),evening:num(c?.cowEvening)},buffalo:{rate:num(c?.buffRate),morning:num(c?.buffMorning),evening:num(c?.buffEvening)}};
-  return {cow:{rate:num(s.cow?.rate),morning:num(s.cow?.morning),evening:num(s.cow?.evening)},buffalo:{rate:num(s.buffalo?.rate),morning:num(s.buffalo?.morning),evening:num(s.buffalo?.evening)}};
+  const old=c?.milkSchedule||{},defaultSlab=c?.slabId||'';
+  const make=(raw,qtyFallback,rateFallback,slabFallback)=>{
+    if(raw&&typeof raw==='object'&&!Array.isArray(raw))return {qty:num(raw.qty),rate:num(raw.rate||rateFallback),slabId:raw.slabId||slabFallback||defaultSlab};
+    return {qty:num(raw),rate:num(rateFallback),slabId:slabFallback||defaultSlab};
+  };
+  const cm=make(old.cow?.morning,c?.cowMorning,old.cow?.rate||c?.cowRate,old.cow?.morningSlabId||defaultSlab);
+  const ce=make(old.cow?.evening,c?.cowEvening,old.cow?.rate||c?.cowRate,old.cow?.eveningSlabId||defaultSlab);
+  const bm=make(old.buffalo?.morning,c?.buffMorning,old.buffalo?.rate||c?.buffRate,old.buffalo?.morningSlabId||defaultSlab);
+  const be=make(old.buffalo?.evening,c?.buffEvening,old.buffalo?.rate||c?.buffRate,old.buffalo?.eveningSlabId||defaultSlab);
+  return {cow:{morning:cm.qty,evening:ce.qty,rate:cm.rate||ce.rate,morningRate:cm.rate,eveningRate:ce.rate,morningSlabId:cm.slabId,eveningSlabId:ce.slabId},
+    buffalo:{morning:bm.qty,evening:be.qty,rate:bm.rate||be.rate,morningRate:bm.rate,eveningRate:be.rate,morningSlabId:bm.slabId,eveningSlabId:be.slabId}};
 }
 function dailyMilkValues(c,date){
-  const s=customerMilkSchedule(c),x=customerDailyExisting(c.id,date);
-  if(x)return x;
-  const cm=s.cow.morning,ce=s.cow.evening,bm=s.buffalo.morning,be=s.buffalo.evening;
-  const qty=cm+ce+bm+be,amount=(cm+ce)*s.cow.rate+(bm+be)*s.buffalo.rate;
-  return {morningQty:cm+bm,eveningQty:ce+be,cowMorningQty:cm,cowEveningQty:ce,buffMorningQty:bm,buffEveningQty:be,cowRate:s.cow.rate,buffRate:s.buffalo.rate,qty,amount,auto:true};
+  const s=customerMilkSchedule(c),x=customerDailyExisting(c.id,date);if(x)return x;
+  const cm=s.cow.morning,ce=s.cow.evening,bm=s.buffalo.morning,be=s.buffalo.evening,qty=cm+ce+bm+be;
+  const amount=cm*s.cow.morningRate+ce*s.cow.eveningRate+bm*s.buffalo.morningRate+be*s.buffalo.eveningRate;
+  return {morningQty:cm+bm,eveningQty:ce+be,cowMorningQty:cm,cowEveningQty:ce,buffMorningQty:bm,buffEveningQty:be,
+    cowRate:s.cow.rate,buffRate:s.buffalo.rate,cowMorningRate:s.cow.morningRate,cowEveningRate:s.cow.eveningRate,buffMorningRate:s.buffalo.morningRate,buffEveningRate:s.buffalo.eveningRate,
+    cowMorningSlabId:s.cow.morningSlabId,cowEveningSlabId:s.cow.eveningSlabId,buffMorningSlabId:s.buffalo.morningSlabId,buffEveningSlabId:s.buffalo.eveningSlabId,qty,amount,auto:true};
 }
 function saveCustomerDailyInline(customerId,date){
   const c=(db.customers||[]).find(x=>x.id===customerId);if(!c)return;
   const cm=num(document.getElementById('cmq_'+customerId)?.value),ce=num(document.getElementById('ceq_'+customerId)?.value),bm=num(document.getElementById('bmq_'+customerId)?.value),be=num(document.getElementById('beq_'+customerId)?.value);
-  const s=customerMilkSchedule(c),qty=cm+ce+bm+be,amount=(cm+ce)*s.cow.rate+(bm+be)*s.buffalo.rate;
-  let r=customerDailyExisting(customerId,date);
-  if(!qty){
-    if(r){db.customerSales=db.customerSales.filter(x=>x.id!==r.id);audit('DELETE','Customer Daily Sale',r.id,r,null);save();}
-    renderCustomerDailyMilk(date);return;
-  }
+  const s=customerMilkSchedule(c),qty=cm+ce+bm+be,amount=cm*s.cow.morningRate+ce*s.cow.eveningRate+bm*s.buffalo.morningRate+be*s.buffalo.eveningRate;let r=customerDailyExisting(customerId,date);
+  if(!qty){if(r){db.customerSales=db.customerSales.filter(x=>x.id!==r.id);audit('DELETE','Customer Daily Sale',r.id,r,null);save();}renderCustomerDailyMilk(date);return;}
   const blendedRate=qty?amount/qty:0;
-  if(r){r.cowMorningQty=cm;r.cowEveningQty=ce;r.buffMorningQty=bm;r.buffEveningQty=be;r.morningQty=cm+bm;r.eveningQty=ce+be;r.qty=qty;r.cowRate=s.cow.rate;r.buffRate=s.buffalo.rate;r.rate=blendedRate;r.amount=amount;audit('UPDATE','Customer Daily Sale',r.id,null,r)}
-  else{r={id:uid(),customerId,date,productKey:'milk',product:'Milk',cowMorningQty:cm,cowEveningQty:ce,buffMorningQty:bm,buffEveningQty:be,morningQty:cm+bm,eveningQty:ce+be,qty, cowRate:s.cow.rate,buffRate:s.buffalo.rate,rate:blendedRate,amount,note:''};db.customerSales.push(r);audit('CREATE','Customer Daily Sale',r.id,null,r)}
+  if(r){r.cowMorningQty=cm;r.cowEveningQty=ce;r.buffMorningQty=bm;r.buffEveningQty=be;r.morningQty=cm+bm;r.eveningQty=ce+be;r.qty=qty;r.cowRate=s.cow.rate;r.buffRate=s.buffalo.rate;
+    r.cowMorningRate=s.cow.morningRate;r.cowEveningRate=s.cow.eveningRate;r.buffMorningRate=s.buffalo.morningRate;r.buffEveningRate=s.buffalo.eveningRate;
+    r.cowMorningSlabId=s.cow.morningSlabId;r.cowEveningSlabId=s.cow.eveningSlabId;r.buffMorningSlabId=s.buffalo.morningSlabId;r.buffEveningSlabId=s.buffalo.eveningSlabId;r.rate=blendedRate;r.amount=amount;audit('UPDATE','Customer Daily Sale',r.id,null,r);
+  }else{r={id:uid(),customerId,date,productKey:'milk',product:'Milk',cowMorningQty:cm,cowEveningQty:ce,buffMorningQty:bm,buffEveningQty:be,morningQty:cm+bm,eveningQty:ce+be,qty,cowRate:s.cow.rate,buffRate:s.buffalo.rate,
+    cowMorningRate:s.cow.morningRate,cowEveningRate:s.cow.eveningRate,buffMorningRate:s.buffalo.morningRate,buffEveningRate:s.buffalo.eveningRate,cowMorningSlabId:s.cow.morningSlabId,cowEveningSlabId:s.cow.eveningSlabId,buffMorningSlabId:s.buffalo.morningSlabId,buffEveningSlabId:s.buffalo.eveningSlabId,rate:blendedRate,amount,note:''};
+    db.customerSales.push(r);audit('CREATE','Customer Daily Sale',r.id,null,r);}
   save();renderCustomerDailyMilk(date);
 }
 function editCustomerDailyMilk(id){
-  const r=(db.customerSales||[]).find(x=>x.id===id);if(!r)return;
-  const cust=(db.customers||[]).find(x=>x.id===r.customerId),s=customerMilkSchedule(cust);
-  modal('Edit Date-wise Milk Entry','<div class="formgrid"><div class="field span2"><label>Customer</label><input value="'+esc(cust?.name||r.customerName||'')+'" readonly></div><div class="field"><label>Date</label><input id="editMilkDate" type="date" value="'+r.date+'"></div><div class="field"><label>Cow Rate ₹/L</label><input id="editCowRate" type="number" step="0.01" value="'+num(r.cowRate||s.cow.rate)+'"></div><div class="field"><label>Cow Morning (L)</label><input id="editCowMorning" type="number" step="0.01" value="'+num(r.cowMorningQty)+'"></div><div class="field"><label>Cow Evening (L)</label><input id="editCowEvening" type="number" step="0.01" value="'+num(r.cowEveningQty)+'"></div><div class="field"><label>Buffalo Rate ₹/L</label><input id="editBuffRate" type="number" step="0.01" value="'+num(r.buffRate||s.buffalo.rate)+'"></div><div class="field"><label>Buffalo Morning (L)</label><input id="editBuffMorning" type="number" step="0.01" value="'+num(r.buffMorningQty)+'"></div><div class="field"><label>Buffalo Evening (L)</label><input id="editBuffEvening" type="number" step="0.01" value="'+num(r.buffEveningQty)+'"></div><div class="field span2"><label>Total</label><input value="'+num(r.qty).toFixed(2)+' L" readonly></div></div>',()=>{
-    const date=val('editMilkDate'),cr=num(val('editCowRate')),cm=num(val('editCowMorning')),ce=num(val('editCowEvening')),br=num(val('editBuffRate')),bm=num(val('editBuffMorning')),be=num(val('editBuffEvening')),qty=cm+ce+bm+be,amount=(cm+ce)*cr+(bm+be)*br;
-    if(!date)return alert('Date required.');
-    if(!qty){if(!confirm('All quantities are zero. Delete this entry?'))return;db.customerSales=db.customerSales.filter(x=>x.id!==id);audit('DELETE','Customer Daily Sale',id,r,null);save();closeModal();editCustomerEntries(r.customerId);return}
-    const duplicate=customerDailyExisting(r.customerId,date);if(duplicate&&duplicate.id!==id)return alert('An entry already exists for this customer on '+fmtDate(date)+'. Edit that entry instead.');
-    r.date=date;r.cowMorningQty=cm;r.cowEveningQty=ce;r.buffMorningQty=bm;r.buffEveningQty=be;r.morningQty=cm+bm;r.eveningQty=ce+be;r.qty=qty;r.cowRate=cr;r.buffRate=br;r.rate=amount/qty;r.amount=amount;
-    audit('UPDATE','Customer Daily Sale',r.id,null,r);save();closeModal();editCustomerEntries(r.customerId);
-  });
+  const r=(db.customerSales||[]).find(x=>x.id===id);if(!r)return;const cust=(db.customers||[]).find(x=>x.id===r.customerId),s=customerMilkSchedule(cust);
+  modal('Edit Date-wise Milk Entry','<div class="formgrid"><div class="field span2"><label>Customer</label><input value="'+esc(cust?.name||r.customerName||'')+'" readonly></div><div class="field"><label>Date</label><input id="editMilkDate" type="date" value="'+r.date+'"></div>'+
+    '<div class="field"><label>Cow Morning Rate ₹/L</label><input id="editCowMorningRate" type="number" step="0.01" value="'+num(r.cowMorningRate??s.cow.morningRate)+'"></div><div class="field"><label>Cow Morning Slab</label><select id="editCowMorningSlab">'+akashSlabOptions(r.cowMorningSlabId||s.cow.morningSlabId)+'</select></div><div class="field"><label>Cow Morning (L)</label><input id="editCowMorning" type="number" step="0.01" value="'+num(r.cowMorningQty)+'"></div>'+
+    '<div class="field"><label>Cow Evening Rate ₹/L</label><input id="editCowEveningRate" type="number" step="0.01" value="'+num(r.cowEveningRate??s.cow.eveningRate)+'"></div><div class="field"><label>Cow Evening Slab</label><select id="editCowEveningSlab">'+akashSlabOptions(r.cowEveningSlabId||s.cow.eveningSlabId)+'</select></div><div class="field"><label>Cow Evening (L)</label><input id="editCowEvening" type="number" step="0.01" value="'+num(r.cowEveningQty)+'"></div>'+
+    '<div class="field"><label>Buffalo Morning Rate ₹/L</label><input id="editBuffMorningRate" type="number" step="0.01" value="'+num(r.buffMorningRate??s.buffalo.morningRate)+'"></div><div class="field"><label>Buffalo Morning Slab</label><select id="editBuffMorningSlab">'+akashSlabOptions(r.buffMorningSlabId||s.buffalo.morningSlabId)+'</select></div><div class="field"><label>Buffalo Morning (L)</label><input id="editBuffMorning" type="number" step="0.01" value="'+num(r.buffMorningQty)+'"></div>'+
+    '<div class="field"><label>Buffalo Evening Rate ₹/L</label><input id="editBuffEveningRate" type="number" step="0.01" value="'+num(r.buffEveningRate??s.buffalo.eveningRate)+'"></div><div class="field"><label>Buffalo Evening Slab</label><select id="editBuffEveningSlab">'+akashSlabOptions(r.buffEveningSlabId||s.buffalo.eveningSlabId)+'</select></div><div class="field"><label>Buffalo Evening (L)</label><input id="editBuffEvening" type="number" step="0.01" value="'+num(r.buffEveningQty)+'"></div>'+
+    '<div class="field span2"><label>Total</label><input value="'+num(r.qty).toFixed(2)+' L" readonly></div></div>',()=>{
+      const date=val('editMilkDate'),cr1=num(val('editCowMorningRate')),cr2=num(val('editCowEveningRate')),br1=num(val('editBuffMorningRate')),br2=num(val('editBuffEveningRate')),cm=num(val('editCowMorning')),ce=num(val('editCowEvening')),bm=num(val('editBuffMorning')),be=num(val('editBuffEvening')),qty=cm+ce+bm+be,amount=cm*cr1+ce*cr2+bm*br1+be*br2;
+      if(!date)return alert('Date required.');if(!qty){if(!confirm('All quantities are zero. Delete this entry?'))return;db.customerSales=db.customerSales.filter(x=>x.id!==id);audit('DELETE','Customer Daily Sale',id,r,null);save();closeModal();editCustomerEntries(r.customerId);return}
+      const duplicate=customerDailyExisting(r.customerId,date);if(duplicate&&duplicate.id!==id)return alert('An entry already exists for this customer on '+fmtDate(date)+'. Edit that entry instead.');
+      r.date=date;r.cowMorningQty=cm;r.cowEveningQty=ce;r.buffMorningQty=bm;r.buffEveningQty=be;r.morningQty=cm+bm;r.eveningQty=ce+be;r.qty=qty;r.cowMorningRate=cr1;r.cowEveningRate=cr2;r.buffMorningRate=br1;r.buffEveningRate=br2;r.cowRate=cr1||cr2;r.buffRate=br1||br2;
+      r.cowMorningSlabId=val('editCowMorningSlab');r.cowEveningSlabId=val('editCowEveningSlab');r.buffMorningSlabId=val('editBuffMorningSlab');r.buffEveningSlabId=val('editBuffEveningSlab');r.rate=amount/qty;r.amount=amount;
+      audit('UPDATE','Customer Daily Sale',r.id,null,r);save();closeModal();editCustomerEntries(r.customerId);
+    });
 }
 function deleteCustomerDailyMilk(id){
   const r=(db.customerSales||[]).find(x=>x.id===id);if(!r)return;
   if(!confirm('Delete milk entry for '+fmtDate(r.date)+'?'))return;
   db.customerSales=db.customerSales.filter(x=>x.id!==id);audit('DELETE','Customer Daily Sale',id,r,null);save();editCustomerEntries(r.customerId);
 }
+
 function renderCustomerDailyMilk(date=iso()){
   const d=date||iso();window.__durgaView='dailyMilk';window.__customerDailyDate=d;
   const customers=[...(db.customers||[])].filter(c=>c.active!==false).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   const rows=customers.map(c=>{
-    const x=dailyMilkValues(c,d),s=customerMilkSchedule(c),saved=!!customerDailyExisting(c.id,d);
+    const x=dailyMilkValues(c,d),saved=!!customerDailyExisting(c.id,d);
     return '<tr><td><button class="linkbtn" style="margin:0;text-align:left" onclick="renderCustomerLedger(\''+c.id+'\')"><b>'+esc(c.name)+'</b></button></td>'+
-      '<td><small>Cow ₹'+num(s.cow.rate)+'/L<br>Buffalo ₹'+num(s.buffalo.rate)+'/L</small></td>'+
+      '<td><small>Cow AM '+money(x.cowMorningRate||0)+' • PM '+money(x.cowEveningRate||0)+'<br>Buffalo AM '+money(x.buffMorningRate||0)+' • PM '+money(x.buffEveningRate||0)+'</small></td>'+
       '<td><input id="cmq_'+c.id+'" class="inlineQty" type="number" step="0.01" value="'+num(x.cowMorningQty)+'" onfocus="this.select()" onblur="saveCustomerDailyInline(\''+c.id+'\',\''+d+'\')"></td>'+
       '<td><input id="ceq_'+c.id+'" class="inlineQty" type="number" step="0.01" value="'+num(x.cowEveningQty)+'" onfocus="this.select()" onblur="saveCustomerDailyInline(\''+c.id+'\',\''+d+'\')"></td>'+
       '<td><input id="bmq_'+c.id+'" class="inlineQty" type="number" step="0.01" value="'+num(x.buffMorningQty)+'" onfocus="this.select()" onblur="saveCustomerDailyInline(\''+c.id+'\',\''+d+'\')"></td>'+
@@ -420,10 +463,8 @@ function renderCustomerDailyMilk(date=iso()){
       '<td><b>'+num(x.qty).toFixed(2)+' L</b></td><td>'+money(x.amount||0)+'</td>'+
       '<td>'+(saved?'<button class="btn sm gray" onclick="editCustomerDailyMilk(\''+x.id+'\')">Edit</button> <button class="btn sm red" onclick="deleteCustomerDailyMilk(\''+x.id+'\')">Delete</button>':'<span class="pill green">Auto</span>')+'</td></tr>';
   }).join('')||'<tr><td colspan="9" class="empty">No active customers.</td></tr>';
-  shell('customers','<div class="sectionhead"><div><h1>Daily Milk Entry</h1><div class="muted">Selected date: '+fmtDate(d)+'. Customer default schedule is auto-filled. Holiday = set that customer quantity to 0.</div></div><div class="toolbar"><input id="dailyMilkDate" type="date" value="'+d+'" onchange="renderCustomerDailyMilk(this.value)"><button class="btn gray" onclick="render(\'customers\')">Back to Customers</button></div></div><div class="card section"><div class="sectionhead"><h2>Daily Milk Schedule</h2><div class="muted">Cow/Buffalo and Morning/Evening quantities are pre-filled from Customer Master.</div></div><div class="tablewrap"><table class="table"><tr><th>Customer</th><th>Rates</th><th>Cow AM</th><th>Cow PM</th><th>Buffalo AM</th><th>Buffalo PM</th><th>Total</th><th>Amount</th><th>Action</th></tr>'+rows+'</table></div></div>','Daily Milk Entry');
+  shell('customers','<div class="sectionhead"><div><h1>Daily Milk Entry</h1><div class="muted">Selected date: '+fmtDate(d)+'. Customer default schedule is auto-filled. Holiday = set that customer quantity to 0.</div></div><div class="toolbar"><input id="dailyMilkDate" type="date" value="'+d+'" onchange="renderCustomerDailyMilk(this.value)"><button class="btn gray" onclick="render(\'customers\')">Back to Customers</button></div></div><div class="card section"><div class="sectionhead"><h2>Daily Milk Schedule</h2><div class="muted">Cow/Buffalo Morning/Evening quantities are pre-filled from Customer Master. Rates and Slabs are stored separately for each slot.</div></div><div class="tablewrap"><table class="table"><tr><th>Customer</th><th>Rates</th><th>Cow AM</th><th>Cow PM</th><th>Buffalo AM</th><th>Buffalo PM</th><th>Total</th><th>Amount</th><th>Action</th></tr>'+rows+'</table></div></div>','Daily Milk Entry');
 }
-function changeCustomerStatus(id){const c=(db.customers||[]).find(x=>x.id===id);if(!c)return;c.active=c.active===false;audit('UPDATE','Customer Status',c.id,null,{active:c.active});save();render('customers')}
-function renderCustomerDailyMilk(date=iso()){const d=date||iso();window.__durgaView='dailyMilk';window.__customerDailyDate=d;const customers=[...(db.customers||[])].filter(c=>c.active!==false).sort((a,b)=>String(a.name).localeCompare(String(b.name)));const rows=customers.map(c=>{const x=customerDailyExisting(c.id,d),rate=customerRateFor(c,'milk',d);return '<tr><td><button class="linkbtn" style="margin:0;text-align:left" onclick="renderCustomerLedger(\''+c.id+'\')"><b>'+esc(c.name)+'</b></button></td><td>'+esc(c.mobile||'')+'</td><td><input id="mq_'+c.id+'" class="inlineQty" type="number" step="0.01" value="'+(x?.morningQty||'')+'" onblur="saveCustomerDailyInline(\''+c.id+'\',\''+d+'\')"></td><td><input id="eq_'+c.id+'" class="inlineQty" type="number" step="0.01" value="'+(x?.eveningQty||'')+'" onblur="saveCustomerDailyInline(\''+c.id+'\',\''+d+'\')"></td><td><b>'+(x?.qty||0)+'</b></td><td>'+money(x?.rate||rate)+'</td><td>'+money(x?.amount||0)+'</td><td>'+(x?'<button class="btn sm gray" onclick="editCustomerDailyMilk(\''+x.id+'\')">Edit</button> <button class="btn sm red" onclick="deleteCustomerDailyMilk(\''+x.id+'\')">Delete</button>':'<span class="muted">Direct Entry</span>')+'</td></tr>'}).join('')||'<tr><td colspan="8" class="empty">No active customers.</td></tr>';shell('customers','<div class="sectionhead"><div><h1>Daily Milk Entry</h1><div class="muted">Selected date: '+fmtDate(d)+'. Morning and Evening can be entered directly.</div></div><div class="toolbar"><input id="dailyMilkDate" type="date" value="'+d+'" onchange="renderCustomerDailyMilk(this.value)"><button class="btn gray" onclick="render(\'customers\')">Back to Customers</button></div></div><div class="card section"><div class="sectionhead"><h2>Daily Milk Master</h2><div class="muted">Enter quantity directly. Existing entry can still be edited or deleted.</div></div><div class="tablewrap"><table class="table"><tr><th>Customer</th><th>Mobile</th><th>Morning</th><th>Evening</th><th>Total</th><th>Rate</th><th>Amount</th><th>Action</th></tr>'+rows+'</table></div></div>','Daily Milk Entry')}
 function customerDailyProductChanged(){const c=(db.customers||[]).find(x=>x.id===window.__customerLedgerId),key=val('productKey'),r=document.getElementById('rate');if(c&&r)r.value=customerRateFor(c,key,val('date')||iso());customerDailyAmountChanged()}
 function customerDailyAmountChanged(){const q=num(val('morningQty'))+num(val('eveningQty')),r=num(val('rate'));if(document.getElementById('qty'))document.getElementById('qty').value=q.toFixed(2);if(document.getElementById('amount'))document.getElementById('amount').value=(q*r).toFixed(2)}
 
