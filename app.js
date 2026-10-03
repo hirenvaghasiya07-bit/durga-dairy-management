@@ -1,21 +1,50 @@
 const KEY='durga-dairy-v2-db';
 const CLOUD_API=(window.DURGA_CONFIG&&window.DURGA_CONFIG.apiBase)||'';
 let cloudState={status:CLOUD_API?'connecting':'local',lastSync:null,error:null};
+const SYNC_ARRAYS=['users','prices','sales','collections','milk','stockPurchases','stockUsage','expenses','customers','vendors','cashChecks','audit','customerSales','customerPayments','customerBills'];
+function mergeCloudDB(local,remote){
+  const base=structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB));
+  const out=Object.assign(base,remote||{},local||{});
+  for(const key of SYNC_ARRAYS){
+    const lm=Array.isArray(local?.[key])?local[key]:[];
+    const rm=Array.isArray(remote?.[key])?remote[key]:[];
+    const map=new Map();
+    for(const x of rm)if(x?.id!=null)map.set(String(x.id),x);
+    for(const x of lm)if(x?.id!=null)map.set(String(x.id),x);
+    const noId=[...rm.filter(x=>x?.id==null),...lm.filter(x=>x?.id==null)];
+    out[key]=[...map.values(),...noId];
+  }
+  out.currentUser=local?.currentUser||remote?.currentUser||null;
+  out.version=Math.max(num(local?.version),num(remote?.version),2);
+  return out;
+}
 async function cloudSync(){
   if(!CLOUD_API||!db.currentUser)return;
   try{
     cloudState.status='syncing';
+    const base=CLOUD_API.replace(/\/$/,'');
     const token=localStorage.getItem('durga-token')||'';
-    const r=await fetch(CLOUD_API.replace(/\/$/,'')+'/api/sync',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+    const headers={'Content-Type':'application/json','Authorization':'Bearer '+token};
+    const stateRes=await fetch(base+'/api/state',{headers});
+    if(!stateRes.ok)throw new Error('Cloud read failed ('+stateRes.status+')');
+    const state=await stateRes.json();
+    const remote=state.db||null;
+    if(remote){
+      const currentUser=db.currentUser;
+      db=mergeCloudDB(db,remote);
+      db.currentUser=currentUser;
+      localStorage.setItem(KEY,JSON.stringify(db));
+    }
+    const push=await fetch(base+'/api/sync',{
+      method:'POST',headers,
       body:JSON.stringify({workspaceId:'durga-dairy',db})
     });
-    if(!r.ok)throw new Error('Cloud sync failed ('+r.status+')');
-    const j=await r.json();
+    if(!push.ok)throw new Error('Cloud write failed ('+push.status+')');
+    const j=await push.json();
     if(j.db){
       const currentUser=db.currentUser;
-      db=Object.assign(defaultDB,j.db,{currentUser});
+      db=mergeCloudDB(db,j.db);
+      db.currentUser=currentUser;
       localStorage.setItem(KEY,JSON.stringify(db));
     }
     cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
@@ -23,7 +52,39 @@ async function cloudSync(){
     cloudState={status:'offline',lastSync:cloudState.lastSync,error:e.message};
   }
 }
-function scheduleCloudSync(){clearTimeout(window.__durgaSyncTimer);window.__durgaSyncTimer=setTimeout(cloudSync,400);}
+async function cloudPull(){
+  if(!CLOUD_API||!db.currentUser)return false;
+  try{
+    const base=CLOUD_API.replace(/\/$/,'');
+    const token=localStorage.getItem('durga-token')||'';
+    const r=await fetch(base+'/api/state',{headers:{'Authorization':'Bearer '+token,'Cache-Control':'no-cache'}});
+    if(!r.ok)throw new Error('Cloud read failed ('+r.status+')');
+    const j=await r.json();
+    if(j.db){
+      const currentUser=db.currentUser;
+      db=mergeCloudDB(db,j.db);
+      db.currentUser=currentUser;
+      localStorage.setItem(KEY,JSON.stringify(db));
+      cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
+      return true;
+    }
+    cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
+    return false;
+  }catch(e){
+    cloudState={status:'offline',lastSync:cloudState.lastSync,error:e.message};
+    return false;
+  }
+}
+function scheduleCloudSync(){clearTimeout(window.__durgaSyncTimer);window.__durgaSyncTimer=setTimeout(cloudSync,500);}
+function startCloudRealtimeSync(){
+  clearInterval(window.__durgaRealtimeTimer);
+  if(!CLOUD_API)return;
+  window.__durgaRealtimeTimer=setInterval(async()=>{
+    if(!db.currentUser||document.hidden)return;
+    const changed=await cloudPull();
+    if(changed&&document.getElementById('root')?.querySelector('.app')){try{render(document.querySelector('.nav button.active')?.getAttribute('onclick')?.match(/render\('([^']+)'/)?.[1]||'dashboard')}catch(e){}}
+  },3000);
+}
 const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random();
 const now=()=>new Date(); const iso=()=>now().toISOString().slice(0,10); const ym=d=>String(d||'').slice(0,7); const fmtDate=d=>{const [y,m,day]=String(d||'').slice(0,10).split('-'); return day&&m&&y?`${day}-${m}-${y}`:String(d||'')}; const filterDate=(d,mode='all',value='')=>{if(!value||mode==='all')return true; if(mode==='year')return String(d).slice(0,4)===value; if(mode==='month')return String(d).slice(0,7)===value; return String(d)===value};
 const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
@@ -43,10 +104,12 @@ function save(){ensureSalesConfig();localStorage.setItem(KEY,JSON.stringify(db))
 function user(){return db.users.find(u=>u.id===db.currentUser)}
 function audit(action,entity,recordId,before=null,after=null){db.audit.push({id:uid(),at:new Date().toISOString(),userId:user()?.id||'system',userName:user()?.name||'System',action,entity,recordId,before,after});save()}
 function allowed(role,feature){if(role==='Owner'||role==='Full Access Member')return true;if(role==='Manager')return !['users','cashSettings'].includes(feature);if(role==='Family Member')return ['home','expenses','reports','sales','collections'].includes(feature);if(role==='Staff')return ['sales','collections','milk','stock','customers'].includes(feature);return false}
-function init(){
+async function init(){
   if(!db.currentUser){login();return;}
   if(CLOUD_API){
-    cloudSync().finally(()=>render('dashboard'));
+    await cloudSync();
+    render('dashboard');
+    startCloudRealtimeSync();
   }else render('dashboard');
 }
 function login(){const options=db.users.filter(u=>u.active).map(u=>'<option value="'+u.id+'">'+esc(u.name)+' • '+esc(u.role)+'</option>').join('');document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy</h1><p>Online Management System</p><div class="notice">Sign in with your own account. Every entry is recorded with the member name and time.</div><div class="field"><label>Login</label><select id="loginUser">'+options+'</select></div><div class="field"><label>Password / PIN</label><input id="loginPin" type="password" autocomplete="current-password" placeholder="Password"></div><button class="btn" style="width:100%;margin-top:16px" onclick="doLogin()">Login</button><button class="linkbtn" onclick="forgotPassword()">Forgot Password?</button><p class="small">First-run demo: Hiren 1234 • Brother 3333 • Family 1111 • Staff 2222</p></div></div>'}
