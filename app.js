@@ -193,7 +193,7 @@ function customerMasterPrint(month){
   const prev=prevMonth(month);
   const prepared=(db.customers||[]).map(c=>{
     const cur=customerMonthSummary(c.id,month),pr=customerMonthSummary(c.id,prev),pay=(db.customerPayments||[]).filter(x=>x.customerId===c.id&&x.month===month);
-    const paid=pay.reduce((a,x)=>a+num(x.amount),0),adj=pay.reduce((a,x)=>a+num(x.adjustment),0),opening=pr.balance,totalDue=opening+cur.bill,net=Math.max(0,totalDue-paid-adj);
+    const paid=pay.reduce((a,x)=>a+num(x.amount),0),adj=pay.reduce((a,x)=>a+num(x.adjustment),0),opening=pr.balance,totalDue=opening+cur.bill,calculatedBalance=Math.max(0,totalDue-paid-adj),aging=customerAging(c),net=Math.max(calculatedBalance,aging.outstanding);
     return {c,cur,pr,paid,adj,opening,totalDue,net};
   }).filter(x=>x.c.active!==false||x.net>0).sort((a,b)=>b.net-a.net||((b.c.active!==false)-(a.c.active!==false))||String(a.c.name).localeCompare(String(b.c.name)));
   const sum=k=>prepared.reduce((a,x)=>a+num(k.split('.').reduce((v,p)=>v[p],x)),0);
@@ -212,7 +212,7 @@ function renderCustomers(){
     const cur=customerMonthSummary(r.id,month),pr=customerMonthSummary(r.id,prevMonth(month));
     const pay=(db.customerPayments||[]).filter(x=>x.customerId===r.id&&x.month===month);
     const paid=pay.reduce((z,x)=>z+num(x.amount),0),adj=pay.reduce((z,x)=>z+num(x.adjustment),0);
-    const opening=pr.balance,total=opening+cur.bill,balance=Math.max(0,total-paid-adj);
+    const opening=pr.balance,total=opening+cur.bill,calculatedBalance=Math.max(0,total-paid-adj),aging=customerAging(r),balance=Math.max(calculatedBalance,aging.outstanding);
     return {r,cur,opening,total,paid,adj,balance};
   });
   const rows=prepared.filter(x=>x.r.active!==false||x.balance>0).sort((a,b)=>b.balance-a.balance||((b.r.active!==false)-(a.r.active!==false))||String(a.r.name).localeCompare(String(b.r.name)));
