@@ -147,7 +147,9 @@ function allowed(role,feature){if(role==='Owner'||role==='Full Access Member')re
 async function init(){
   if(!BUSINESS_ID){portalChooser();return;}
   if(isZeroTwo()){
-    if(!db.currentUser){zeroTwoLogin();return;}
+    // Zero Two uses the server token. Ignore stale local user state.
+    const token=localStorage.getItem('durga-token')||'';
+    if(!token){zeroTwoLogin();return;}
     await zeroTwoLoad();
     return;
   }
@@ -740,10 +742,17 @@ async function zeroTwoLoad(){
     const token=localStorage.getItem('durga-token')||'';
     const r=await fetch(CLOUD_API.replace(/\/$/,'')+'/api/zero-two-state',{headers:{'Authorization':'Bearer '+token,'Cache-Control':'no-cache'}});
     const j=await r.json();
+    if(r.status===401||r.status===403){
+      localStorage.removeItem('durga-token');
+      db.currentUser=null;
+      localStorage.setItem(KEY,JSON.stringify(db));
+      zeroTwoLogin();
+      return;
+    }
     if(!r.ok||!j.hiren||!j.akash)throw new Error(j.error||'Combined data not available');
     window.__zeroTwoData={hiren:j.hiren,akash:j.akash,updatedAt:j.updatedAt||null};
     renderZeroTwo();
-  }catch(e){document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Zero Two</h1><div class="notice">Combined data load failed: '+esc(e.message)+'</div><button class="btn" onclick="portalChooser()">Back</button></div></div>'}
+  }catch(e){document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy • All</h1><div class="notice">All data load failed: '+esc(e.message)+'</div><button class="btn orange" onclick="zeroTwoLogin()">Login Again</button><button class="linkbtn" onclick="portalChooser()">Back</button></div></div>'}
 }
 function zeroTwoNum(v){return Number(v||0)}
 function zeroTwoSum(arr,key){return (arr||[]).reduce((a,x)=>a+zeroTwoNum(x?.[key]),0)}
