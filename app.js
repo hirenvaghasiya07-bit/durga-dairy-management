@@ -1,4 +1,10 @@
-const KEY='durga-dairy-v2-db';
+const BASE_KEY='durga-dairy-v2-db';
+let BUSINESS_ID=sessionStorage.getItem('durga-business')||'';
+let KEY=BUSINESS_ID?BASE_KEY+'-'+BUSINESS_ID:BASE_KEY;
+function businessName(){return BUSINESS_ID==='akash'?'Akash':'Hiren'}
+function businessDBKey(id=BUSINESS_ID){return BASE_KEY+'-'+id}
+function selectBusiness(id){BUSINESS_ID=id;sessionStorage.setItem('durga-business',id);KEY=businessDBKey(id);location.reload()}
+function portalChooser(){document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy</h1><p>Select Business</p><div class="notice">Choose your business to open its separate accounts, customers, sales, purchases and reports.</div><div class="toolbar" style="margin-top:16px"><button class="btn" style="width:100%;margin-bottom:8px" onclick="selectBusiness(\'hiren\')">Hiren</button><button class="btn green" style="width:100%" onclick="selectBusiness(\'akash\')">Akash</button></div></div></div>'}
 const CLOUD_API=(window.DURGA_CONFIG&&window.DURGA_CONFIG.apiBase)||'';
 let cloudState={status:CLOUD_API?'connecting':'local',lastSync:null,error:null};
 const SYNC_ARRAYS=['users','prices','sales','collections','milk','stockPurchases','stockUsage','expenses','customers','vendors','cashChecks','audit','customerSales','customerPayments','customerBills'];
@@ -25,7 +31,7 @@ async function cloudSync(){
     const base=CLOUD_API.replace(/\/$/,'');
     const token=localStorage.getItem('durga-token')||'';
     const headers={'Content-Type':'application/json','Authorization':'Bearer '+token};
-    const stateRes=await fetch(base+'/api/state',{headers});
+    const stateRes=await fetch(base+'/api/state?workspaceId='+encodeURIComponent('durga-dairy-'+BUSINESS_ID),{headers});
     if(!stateRes.ok)throw new Error('Cloud read failed ('+stateRes.status+')');
     const state=await stateRes.json();
     const remote=state.db||null;
@@ -37,7 +43,7 @@ async function cloudSync(){
     }
     const push=await fetch(base+'/api/sync',{
       method:'POST',headers,
-      body:JSON.stringify({workspaceId:'durga-dairy',db})
+      body:JSON.stringify({workspaceId:'durga-dairy-'+BUSINESS_ID,db})
     });
     if(!push.ok)throw new Error('Cloud write failed ('+push.status+')');
     const j=await push.json();
@@ -57,7 +63,7 @@ async function cloudPull(){
   try{
     const base=CLOUD_API.replace(/\/$/,'');
     const token=localStorage.getItem('durga-token')||'';
-    const r=await fetch(base+'/api/state',{headers:{'Authorization':'Bearer '+token,'Cache-Control':'no-cache'}});
+    const r=await fetch(base+'/api/state?workspaceId='+encodeURIComponent('durga-dairy-'+BUSINESS_ID),{headers:{'Authorization':'Bearer '+token,'Cache-Control':'no-cache'}});
     if(!r.ok)throw new Error('Cloud read failed ('+r.status+')');
     const j=await r.json();
     if(j.db){
@@ -99,7 +105,7 @@ const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:
 const num=n=>Number(n||0); const esc=s=>String(s??'').replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m]));
 const defaultDB={version:2,users:[{id:'u_owner',name:'Hiren',email:'owner@durga.local',pin:'1234',role:'Owner',active:true},{id:'u_brother',name:'Brother',email:'brother@durga.local',pin:'3333',role:'Full Access Member',active:true},{id:'u_family',name:'Family Member',email:'family@durga.local',pin:'1111',role:'Family Member',active:true},{id:'u_staff',name:'Dairy Staff',email:'staff@durga.local',pin:'2222',role:'Staff',active:true}],currentUser:null,settings:{cowRate:72,buffaloRate:68,gheeBuyRate:1050,gheeSaleRate:0,pedaBuyRate:180,pedaSaleRate:0,salePrices:{milk82:82,milk72:72,buttermilk:30,ghee:1100,peda:400}},prices:[],sales:[],collections:[],milk:[],stockPurchases:[],stockUsage:[],expenses:[],customers:[],vendors:[],cashChecks:[],audit:[],customerSales:[],customerPayments:[],customerBills:[]};
 let db=load();
-function load(){try{return Object.assign(defaultDB,JSON.parse(localStorage.getItem(KEY)||'{}'))}catch(e){return structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB))}}
+function load(){try{const raw=localStorage.getItem(KEY);if(raw)return Object.assign(structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB)),JSON.parse(raw));const fresh=structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB));if(BUSINESS_ID==='akash'){fresh.users=fresh.users.filter(u=>u.id==='u_brother').map(u=>({...u,name:'Akash',email:'akash@durga.local'}));fresh.currentUser=null;fresh.businessId='akash'}else{fresh.businessId='hiren'}return fresh}catch(e){return structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB))}}
 function ensureSalesConfig(){db.settings=db.settings||{};db.settings.salePrices=Object.assign({milk:72,buttermilk:30,ghee:1100,peda:400},db.settings.salePrices||{});if(db.settings.salePrices.milk==null)db.settings.salePrices.milk=72;db.sales=(db.sales||[]).map(x=>{if(x.saleKey==='milk82'||x.saleKey==='milk72'||x.product==='Milk'){x.saleKey='milk';x.product='Milk'}if(!x.rate&&x.qty)x.rate=num(x.amount)/num(x.qty);return x});db.customers=(db.customers||[]).map(x=>{if(!x.saleKey&&x.product)x.saleKey=String(x.product).toLowerCase()==='milk'?'milk':String(x.product).toLowerCase()==='buttermilk'?'buttermilk':String(x.product).toLowerCase()==='ghee'?'ghee':String(x.product).toLowerCase()==='peda'?'peda':'other';if(!x.priceHistory&&x.rate)x.priceHistory=[{date:x.createdAt?String(x.createdAt).slice(0,10):iso(),rate:num(x.rate)}];return x})}
 ensureSalesConfig();
 function saleProducts(){return [{key:'milk',name:'Milk',unit:'L'},{key:'buttermilk',name:'Buttermilk',unit:'L'},{key:'ghee',name:'Ghee',unit:'kg'},{key:'peda',name:'Peda',unit:'kg'},{key:'other',name:'Other',unit:'unit'}]}
@@ -113,6 +119,7 @@ function user(){return db.users.find(u=>u.id===db.currentUser)}
 function audit(action,entity,recordId,before=null,after=null){db.audit.push({id:uid(),at:new Date().toISOString(),userId:user()?.id||'system',userName:user()?.name||'System',action,entity,recordId,before,after});save()}
 function allowed(role,feature){if(role==='Owner'||role==='Full Access Member')return true;if(role==='Manager')return !['users','cashSettings'].includes(feature);if(role==='Family Member')return ['expenses'].includes(feature);if(role==='Staff')return ['sales'].includes(feature);return false}
 async function init(){
+  if(!BUSINESS_ID){portalChooser();return;}
   if(!db.currentUser){login();return;}
   if(CLOUD_API){
     await cloudSync();
@@ -120,9 +127,9 @@ async function init(){
     startCloudRealtimeSync();
   }else render('dashboard');
 }
-function login(){const options=db.users.filter(u=>u.active).map(u=>'<option value="'+u.id+'">'+esc(u.name)+' • '+esc(u.role)+'</option>').join('');document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy</h1><p>Online Management System</p><div class="notice">Sign in with your own account. Every entry is recorded with the member name and time.</div><div class="field"><label>Login</label><select id="loginUser">'+options+'</select></div><div class="field"><label>Password / PIN</label><input id="loginPin" type="password" autocomplete="current-password" placeholder="Password"></div><button class="btn" style="width:100%;margin-top:16px" onclick="doLogin()">Login</button><button class="linkbtn" onclick="forgotPassword()">Forgot Password?</button><p class="small">First-run demo: Hiren 1234 • Brother 3333 • Family 1111 • Staff 2222</p></div></div>'}
+function login(){const options=db.users.filter(u=>u.active).map(u=>'<option value="'+u.id+'">'+esc(u.name)+' • '+esc(u.role)+'</option>').join('');document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy • '+businessName()+'</h1><p>Online Management System</p><div class="notice">Sign in with your own account. Every entry is recorded with the member name and time.</div><div class="field"><label>Login</label><select id="loginUser">'+options+'</select></div><div class="field"><label>Password / PIN</label><input id="loginPin" type="password" autocomplete="current-password" placeholder="Password"></div><button class="btn" style="width:100%;margin-top:16px" onclick="doLogin()">Login</button><button class="linkbtn" onclick="forgotPassword()">Forgot Password?</button><p class="small">First-run demo: Hiren 1234 • Brother 3333 • Family 1111 • Staff 2222</p></div></div>'}
 function forgotPassword(){modal('Forgot Password','<p class="muted">Enter your account email. In production this will send a secure reset link.</p><div class="field"><label>Email</label><input id="resetEmail" type="email" placeholder="you@example.com"></div>',async()=>{const email=val('resetEmail');if(!email)return alert('Email required.');if(CLOUD_API){try{const r=await fetch(CLOUD_API.replace(/\/$/, '')+'/api/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});alert(r.ok?'If the account exists, a reset link has been sent.':'Reset request failed.')}catch(e){alert('Reset service unavailable.')}}else alert('Password reset is ready for cloud deployment; connect the online API to send the secure reset link.');closeModal()})}
-async function doLogin(){const id=document.getElementById('loginUser').value,p=document.getElementById('loginPin').value,u=db.users.find(x=>x.id===id);if(!u||u.pin!==p)return alert('Wrong password.');if(CLOUD_API){try{const r=await fetch(CLOUD_API.replace(/\/$/, '')+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:u.email,password:p,workspaceId:'durga-dairy'})});if(r.ok){const j=await r.json();localStorage.setItem('durga-token',j.token||'')}}catch(e){cloudState={status:'offline',error:e.message}}}db.currentUser=id;save();audit('LOGIN','session',id,null,{name:u.name});render('dashboard');cloudSync()}
+async function doLogin(){const id=document.getElementById('loginUser').value,p=document.getElementById('loginPin').value,u=db.users.find(x=>x.id===id);if(!u||u.pin!==p)return alert('Wrong password.');if(CLOUD_API){try{const r=await fetch(CLOUD_API.replace(/\/$/, '')+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:u.email,password:p,workspaceId:'durga-dairy-'+BUSINESS_ID})});if(r.ok){const j=await r.json();localStorage.setItem('durga-token',j.token||'')}}catch(e){cloudState={status:'offline',error:e.message}}}db.currentUser=id;save();audit('LOGIN','session',id,null,{name:u.name});render('dashboard');cloudSync()}
 function navItems(){return [['dashboard','⌂ Dashboard'],['sales','▣ Daily Sale'],['collections','▤ Bill Collection'],['milk','🥛 Milk Purchase'],['stock','▦ Stock Purchase'],['expenses','₹ Expense'],['customers','♙ Customers'],['vendors','▤ Vendors'],['cash','◉ Cash Flow'],['reports','▥ Reports'],['audit','◌ Activity Log'],['backup','☁ Online Backup'],['users','♙ Members']].filter(([k])=>allowed(user()?.role,k)||k==='dashboard'||k==='audit')}
 function applyDateFormat(){document.querySelectorAll('input[type="date"]').forEach(el=>{el.setAttribute('lang','en-GB');el.setAttribute('title','DD/MM/YYYY');});}
 function shell(active,body,title){document.getElementById('root').innerHTML=`<div class="app"><div class="sideBackdrop" id="sideBackdrop" onclick="closeSide()"></div><aside class="sidebar" id="side"><div class="brand">🐄 Durga Dairy<small>Management System</small></div><div class="nav">${navItems().map(([k,t])=>`<button class="${active===k?'active':''}" onclick="closeSide();render('${k}')">${t}</button>`).join('')}</div><div style="position:absolute;bottom:15px;left:12px;right:12px"><button class="nav" style="width:100%;border:0;background:#ffffff12;color:#fff;padding:10px;border-radius:8px" onclick="logout()">↪ Logout</button></div></aside><section class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="menuBtn" onclick="toggleSide()">☰</button><b>${title||'Dashboard'}</b></div><div class="right"><span class="pill green">● Cloud / Local</span><span class="workspace">Durga Dairy</span><span class="avatar">${esc((user()?.name||'?')[0])}</span><span class="small">${esc(user()?.name||'')}</span></div></header><main class="page">${body}<div class="footer">Durga Dairy Management • Online + Offline prototype • Logged in as ${esc(user()?.name||'')}</div></main></section></div>`;if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});applyDateFormat()}
