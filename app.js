@@ -135,15 +135,15 @@ function makeCustomerBillPDF(d){
   T(31,y-16,8,'Received:');T(230,y-16,8,pdfMoney(d.paid),true);T(304,y-16,8,'Total Amount:');T(505,y-16,8,pdfMoney(d.total),true);y-=rh2+15;
   T(24,y,10,'Balance Payable: '+pdfMoney(d.balance),true);T(24,y-22,9,'Thank you, '+d.c.name+', for your continued business.');
   T(24,28,7,'Durga Dairy - Date-wise monthly milk statement');
-  const stream=cmd.join('\\n'),objs=[
-    '1 0 obj\\n<< /Type /Catalog /Pages 2 0 R >>\\nendobj',
-    '2 0 obj\\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\\nendobj',
-    '3 0 obj\\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+W+' '+H+'] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>\\nendobj',
-    '4 0 obj\\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\\nendobj',
-    '5 0 obj\\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\\nendobj',
-    '6 0 obj\\n<< /Length '+stream.length+' >>\\nstream\\n'+stream+'\\nendstream\\nendobj'
+  const stream=cmd.join('\n'),objs=[
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+W+' '+H+'] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>\nendobj',
+    '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj',
+    '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj',
+    '6 0 obj\n<< /Length '+stream.length+' >>\nstream\n'+stream+'\nendstream\nendobj'
   ];
-  let pdf='%PDF-1.4\\n',offs=[0];for(const o of objs){offs.push(pdf.length);pdf+=o+'\\n'}const xref=pdf.length;pdf+='xref\\n0 '+(objs.length+1)+'\\n0000000000 65535 f \\n';for(let i=1;i<offs.length;i++)pdf+=String(offs[i]).padStart(10,'0')+' 00000 n \\n';pdf+='trailer\\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\\nstartxref\\n'+xref+'\\n%%EOF';return new Blob([pdf],{type:'application/pdf'})
+  let pdf='%PDF-1.4\n',offs=[0];for(const o of objs){offs.push(pdf.length);pdf+=o+'\n'}const xref=pdf.length;pdf+='xref\n0 '+(objs.length+1)+'\n0000000000 65535 f \n';for(let i=1;i<offs.length;i++)pdf+=String(offs[i]).padStart(10,'0')+' 00000 n \n';pdf+='trailer\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';return new Blob([pdf],{type:'application/pdf'})
 }
 function customerBillData(id,month){const c=(db.customers||[]).find(x=>x.id===id);if(!c)return null;const prev=prevMonth(month),cur=customerMonthSummary(id,month),pr=customerMonthSummary(id,prev),opening=pr.balance,pay=(db.customerPayments||[]).filter(x=>x.customerId===id&&x.month===month),paid=pay.reduce((a,x)=>a+num(x.amount),0),adj=pay.reduce((a,x)=>a+num(x.adjustment),0),total=opening+cur.bill,balance=Math.max(0,total-paid-adj);return{c,month,prev,cur,pr,opening,paid,adj,total,balance}}
 async function shareCustomerBill(id,month){const d=customerBillData(id,month||ym(iso()));if(!d)return;const file=new File([makeCustomerBillPDF(d)],d.c.name.replace(/[^a-z0-9]+/gi,'_')+'_'+d.month+'_Bill.pdf',{type:'application/pdf'});const textMsg='Dear '+d.c.name+', your '+d.month+' milk bill is '+money(d.cur.bill)+'. Previous balance: '+money(d.opening)+'. Total due: '+money(d.total)+'. Received: '+money(d.paid)+'. Balance: '+money(d.balance)+'. Thank you.';if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({title:'Monthly Bill - '+d.c.name,text:textMsg,files:[file]});return}catch(e){if(e?.name==='AbortError')return}}const url=URL.createObjectURL(file),a=document.createElement('a');a.href=url;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);alert('Date-wise PDF bill downloaded. You can share this PDF to the customer.')}
