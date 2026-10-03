@@ -147,9 +147,7 @@ function allowed(role,feature){if(role==='Owner'||role==='Full Access Member')re
 async function init(){
   if(!BUSINESS_ID){portalChooser();return;}
   if(isZeroTwo()){
-    // Zero Two uses the server token. Ignore stale local user state.
-    const token=localStorage.getItem('durga-token')||'';
-    if(!token){zeroTwoLogin();return;}
+    // All is a direct read-only combined view. No login is required.
     await zeroTwoLoad();
     return;
   }
@@ -722,9 +720,7 @@ modal('Edit '+entity,body,()=>{let next={...item}; if(entity==='sales'){next.dat
 
 function deleteGeneric(entity,id){if(entity==='vendorPayments')return alert('Vendor payment history cannot be deleted from this screen.');if(!confirm('Delete this record? The action will be logged.'))return;const arr=db[entity]||[];const i=arr.findIndex(x=>x.id===id);if(i<0)return;const old=arr[i];arr.splice(i,1);audit('DELETE',entity,id,old,null);save();render(entity==='sales'?'sales':entity==='collections'?'collections':entity==='milk'?'milk':entity==='stockPurchases'||entity==='stockUsage'?'stock':entity==='expenses'?'expenses':entity==='customers'?'customers':'vendors')}
 function render(k){window.__durgaView=k;if(k==='dashboard')dashboard();else if(k==='sales')renderSales();else if(k==='collections')renderCollections();else if(k==='milk')renderMilk();else if(k==='stock')renderStock();else if(k==='expenses')renderExpenses();else if(k==='customers')renderCustomers();else if(k==='vendors')renderVendors();else if(k==='cash')renderCash();else if(k==='reports')renderReports();else if(k==='audit')renderAudit();else if(k==='backup')renderBackup();else if(k==='users')renderUsers()}
-function zeroTwoLogin(){
-  document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy • All</h1><p>Zero Two • Full Access</p><div class="notice">આ sectionમાં Hiren + Akash બંનેના data એક સાથે દેખાશે. માત્ર Owner / Full Access login માન્ય છે.</div><div class="field"><label>Email</label><input id="zeroEmail" type="email" autocomplete="username" placeholder="Full Access email"></div><div class="field"><label>Password / PIN</label><input id="zeroPin" type="password" autocomplete="current-password" placeholder="Password"></div><button class="btn orange" style="width:100%;margin-top:16px" onclick="doZeroTwoLogin()">Open All</button><button class="linkbtn" onclick="portalChooser()">Back</button></div></div>'
-}
+function zeroTwoLogin(){ portalChooser(); }
 async function doZeroTwoLogin(){
   const email=val('zeroEmail'),password=val('zeroPin');
   if(!email||!password)return alert('Email and password required.');
@@ -739,16 +735,8 @@ async function doZeroTwoLogin(){
 }
 async function zeroTwoLoad(){
   try{
-    const token=localStorage.getItem('durga-token')||'';
-    const r=await fetch(CLOUD_API.replace(/\/$/,'')+'/api/zero-two-state',{headers:{'Authorization':'Bearer '+token,'Cache-Control':'no-cache'}});
+    const r=await fetch(CLOUD_API.replace(/\/$/,'')+'/api/zero-two-state',{headers:{'Cache-Control':'no-cache'}});
     const j=await r.json();
-    if(r.status===401||r.status===403){
-      localStorage.removeItem('durga-token');
-      db.currentUser=null;
-      localStorage.setItem(KEY,JSON.stringify(db));
-      zeroTwoLogin();
-      return;
-    }
     if(!r.ok||!j.hiren||!j.akash)throw new Error(j.error||'Combined data not available');
     window.__zeroTwoData={hiren:j.hiren,akash:j.akash,updatedAt:j.updatedAt||null};
     renderZeroTwo();
@@ -786,6 +774,6 @@ function zeroTwoReport(source='all'){
   const exp=Object.entries(r.expenseBy).sort((x,y)=>y[1]-x[1]);
   return '<div class="sectionhead"><div><h1>Zero Two • '+label+' Report</h1><div class="muted">Hiren + Akash data reflected here only. Original partitions unchanged.</div></div><div class="toolbar"><button class="btn orange" onclick="zeroTwoReportModal()">Filter</button><button class="btn gray" onclick="logout()">Logout</button></div></div><div class="grid">'+metric('Total Sales',zeroTwoMoney(r.salesTotal))+metric('Milk Sold',r.milkSold.toFixed(2)+' L')+metric('Daily Entry Count',r.dailyCount)+metric('Customer Receivable',zeroTwoMoney(r.customerReceivable))+metric('Purchase Payable',zeroTwoMoney(r.payable))+metric('Total Expenses',zeroTwoMoney(r.expenseTotal))+metric('Profit / Loss',zeroTwoMoney(r.profit),r.profit>=0?'Profit':'Loss')+metric('Cash Available',zeroTwoMoney(r.cashAvailable))+'</div><div class="two section"><div class="card"><h2>Business-wise</h2>'+[['Hiren',h],['Akash',a]].map(([n,x])=>'<div class="notice" style="margin-bottom:8px"><b>'+n+'</b><br>Sales: '+money(x.salesTotal)+' • Milk: '+x.milkSold.toFixed(2)+' L • Payable: '+money(x.payable)+' • Expenses: '+money(x.expenseTotal)+' • P/L: '+money(x.profit)+' • Cash: '+money(x.cashAvailable)+'</div>').join('')+'</div><div class="card"><h2>Expense by Category</h2>'+(exp.map(([k,v])=>'<p style="display:flex;justify-content:space-between;margin:8px 0"><span>'+esc(k)+'</span><b>'+money(v)+'</b></p>').join('')||'<p class="muted">No expenses</p>')+'</div></div><div class="card section"><div class="sectionhead"><h2>History</h2><span class="muted">Latest 80 records</span></div>'+tableRows(rows.map((x,i)=>({...x,id:String(i),_entity:'zeroTwo'})),[['Date',x=>fmtDate(x.date)],['Source',x=>x.source||label],['Type',x=>esc(x.kind)],['Description',x=>esc(x.description)],['Qty',x=>x.qty?x.qty.toFixed(2):'—'],['Amount',x=>money(x.amount)]],false)+'</div>';
 }
-function renderZeroTwo(source='all'){if(!isZeroTwo()||!db.currentUser)return zeroTwoLogin();document.getElementById('root').innerHTML='<div class="app"><section class="main" style="width:100%"><header class="topbar"><div><b>Durga Dairy • Zero Two</b></div><div class="right"><span class="pill orange">Full Access</span><span class="workspace">All Data</span><span class="avatar">'+esc((user()?.name||'?')[0])+'</span><span class="small">'+esc(user()?.name||'')+'</span></div></header><main class="page">'+zeroTwoReport(source)+'<div class="footer">Zero Two • Read-only combined reporting • Hiren + Akash</div></main></section></div>'}
+function renderZeroTwo(source='all'){if(!isZeroTwo())return portalChooser();document.getElementById('root').innerHTML='<div class="app"><section class="main" style="width:100%"><header class="topbar"><div><b>Durga Dairy • Zero Two</b></div><div class="right"><span class="pill orange">Full Access</span><span class="workspace">All Data</span><span class="avatar">'+esc((user()?.name||'?')[0])+'</span><span class="small">'+esc(user()?.name||'')+'</span></div></header><main class="page">'+zeroTwoReport(source)+'<div class="footer">Zero Two • Read-only combined reporting • Hiren + Akash</div></main></section></div>'}
 
 init();
