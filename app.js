@@ -793,11 +793,35 @@ function zeroTwoLogin(){ portalChooser(); }
 async function doZeroTwoLogin(){
   await zeroTwoLoad();
 }
+function zeroTwoReadLocal(id){
+  try{
+    const raw=localStorage.getItem(BASE_KEY+'-'+id);
+    return raw?JSON.parse(raw):null;
+  }catch(e){return null}
+}
+function zeroTwoCombineBusiness(local,remote){
+  if(!local)return remote||{};
+  if(!remote)return local||{};
+  const out=cloneCloud(remote)||{};
+  for(const key of SYNC_ARRAYS){
+    const lm=Array.isArray(local[key])?local[key]:[];
+    const rm=Array.isArray(remote[key])?remote[key]:[];
+    const map=new Map();
+    for(const x of rm)if(x?.id!=null)map.set(String(x.id),x);
+    for(const x of lm)if(x?.id!=null){
+      const id=String(x.id);
+      map.set(id,map.has(id)?newerRecord(x,map.get(id)):x);
+    }
+    out[key]=[...map.values(),...rm.filter(x=>x?.id==null),...lm.filter(x=>x?.id==null)];
+  }
+  out.businessId=local.businessId||remote.businessId;
+  return out;
+}
 async function zeroTwoLoad(){
   try{
-    // All is served from the frontend Worker. Use its same-origin proxy so
-    // browser CORS, stale config.js, and cross-origin Service Worker issues
-    // cannot turn the JSON response into cached HTML.
+    // All first reads the central D1 snapshot. If this device already has
+    // Hiren/Akash data locally, merge that partition too so All never shows
+    // zero just because the central snapshot is empty or not yet synced.
     const url=(location.hostname==='durga-dairy-live.hiren-vaghasiya07.workers.dev'
       ? '/api/zero-two-state'
       : (CLOUD_API.replace(/\/$/,'')+'/api/zero-two-state'))+'?ts='+Date.now();
@@ -809,7 +833,13 @@ async function zeroTwoLoad(){
       throw new Error('API returned '+r.status+' '+(ct||'non-JSON')+' instead of JSON');
     }
     if(!r.ok||!j.hiren||!j.akash)throw new Error(j?.error||'Combined data not available');
-    window.__zeroTwoData={hiren:j.hiren,akash:j.akash,updatedAt:j.updatedAt||null};
+    const localH=zeroTwoReadLocal('hiren');
+    const localA=zeroTwoReadLocal('akash');
+    window.__zeroTwoData={
+      hiren:zeroTwoCombineBusiness(localH,j.hiren),
+      akash:zeroTwoCombineBusiness(localA,j.akash),
+      updatedAt:j.updatedAt||null
+    };
     renderZeroTwo();
   }catch(e){
     document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy • All</h1><div class="notice">All data load failed: '+esc(e.message)+'</div><button class="btn orange" onclick="zeroTwoLoad()">Try Again</button><button class="linkbtn" onclick="portalChooser()">Back</button></div></div>'
@@ -879,7 +909,7 @@ function zeroTwoReport(source='all'){
   const dues=source==='all'?[...zeroTwoDuesRows('hiren'),...zeroTwoDuesRows('akash')]:zeroTwoDuesRows(source);
   const duesTotal=dues.reduce((a,x)=>a+x.balance,0);
   const duesTable=tableRows(dues.map((x,i)=>({...x,id:String(i),_entity:'zeroTwoDues'})),[['Source',x=>x.source],['Customer',x=>esc(x.customer)],['Month',x=>fmtDate(String(x.month)+'-01')],['Milk Qty',x=>x.qty.toFixed(2)+' L'],['Bill',x=>money(x.bill)],['Paid',x=>money(x.paid)],['Adjustment',x=>money(x.adjust)],['Due',x=>'<b>'+money(x.balance)+'</b>'],['Status',x=>'<span class="pill '+(x.status==='Pending'?'orange':x.status==='Future Bill'?'red':'green')+'">'+esc(x.status)+'</span>']],false);
-  const businessCards=[['Hiren',h],['Akash',a]].map(([n,x])=>'<div class="notice" style="margin-bottom:8px"><b>'+n+'</b><br>Grand Sales: '+money(x.salesTotal)+' • Dairy Counter: '+money(x.counterTotal)+' • Fixed Customer Sales: '+money(x.fixedCurrent)+' • Milk: '+x.milkSold.toFixed(2)+' L • Vendor Payable: '+money(x.payable)+' • Bill Collection: '+money(x.collectionTotal)+' • Customer Receivable: '+money(x.customerReceivable)+' • Expenses: '+money(x.expenseTotal)+' • P/L: '+money(x.profit)+'</div>').join('');
+  const businessCards=[['Hiren',h],['Akash',a]].map(([n,x])=>'<div class="notice" style="margin-bottom:10px"><b style="font-size:15px">'+n+'</b><div style="display:grid;gap:4px;margin-top:8px"><div>Grand Sales: <b>'+money(x.salesTotal)+'</b></div><div>Dairy Counter: <b>'+money(x.counterTotal)+'</b></div><div>Fixed Customer Sales: <b>'+money(x.fixedCurrent)+'</b></div><div>Milk: <b>'+x.milkSold.toFixed(2)+' L</b></div><div>Vendor Payable: <b>'+money(x.payable)+'</b></div><div>Bill Collection: <b>'+money(x.collectionTotal)+'</b></div><div>Customer Receivable: <b>'+money(x.customerReceivable)+'</b></div><div>Expenses: <b>'+money(x.expenseTotal)+'</b></div><div>P/L: <b>'+money(x.profit)+'</b></div></div></div>').join('');
   return '<div class="sectionhead"><div><h1>All Master • '+label+' Report</h1><div class="muted">Read-only combined reporting. Hiren and Akash data remain separate.</div></div><div class="toolbar"><button class="btn orange" onclick="zeroTwoReportModal()">Filter</button><button class="btn gray" onclick="logout()">Logout</button></div></div><div class="grid">'+metric('Grand Total Sales',zeroTwoMoney(r.salesTotal),'Fixed Customer Sales added after month close')+metric('Dairy Counter • Daily Cash',zeroTwoMoney(r.counterTotal),'Current month counter sales')+metric('Fixed Customer Sales',zeroTwoMoney(r.fixedCurrent),'Current month, not yet added to Grand Sales')+metric('Milk Sold',r.milkSold.toFixed(2)+' L')+metric('Vendor Payable',zeroTwoMoney(r.payable))+metric('Bill Collection',zeroTwoMoney(r.collectionTotal))+metric('Customer Receivable',zeroTwoMoney(r.customerReceivable),'Includes future pending bills')+metric('Total Expenses',zeroTwoMoney(r.expenseTotal))+metric('Profit / Loss',zeroTwoMoney(r.profit),r.profit>=0?'Profit':'Loss')+metric('Cash Available',zeroTwoMoney(r.cashAvailable))+'</div><div class="two section"><div class="card"><h2>Business-wise</h2>'+businessCards+'</div><div class="card"><h2>Expense by Category</h2>'+(exp.map(([k,v])=>'<p style="display:flex;justify-content:space-between;margin:8px 0"><span>'+esc(k)+'</span><b>'+money(v)+'</b></span></p>').join('')||'<p class="muted">No expenses</p>')+'</div></div><div class="charts section"><div class="card"><h2>Sales Comparison</h2><div class="two"><div class="notice"><b>Hiren</b><br>'+money(h.salesTotal)+'</div><div class="notice"><b>Akash</b><br>'+money(a.salesTotal)+'</div></div></div><div class="card"><h2>Milk Sold Comparison</h2><div class="two"><div class="notice"><b>Hiren</b><br>'+h.milkSold.toFixed(2)+' L</div><div class="notice"><b>Akash</b><br>'+a.milkSold.toFixed(2)+' L</div></div></div><div class="card"><h2>Customer Receivable Comparison</h2><div class="two"><div class="notice"><b>Hiren</b><br>'+money(h.customerReceivable)+'</div><div class="notice"><b>Akash</b><br>'+money(a.customerReceivable)+'</div></div></div></div><div class="card section"><div class="sectionhead"><h2>Customer Bill Pending / Receivable</h2><span class="muted">All unpaid months, including future-dated bills • Total: '+money(duesTotal)+'</span></div>'+duesTable+'</div><div class="card section"><div class="sectionhead"><h2>Recent Transactions</h2><span class="muted">Date • Business • Type • Description • Amount</span></div>'+tableRows(rows.map((x,i)=>({...x,id:String(i),_entity:'zeroTwo'})),[['Date',x=>fmtDate(x.date)],['Business',x=>x.source||label],['Type',x=>esc(x.kind)],['Description',x=>esc(x.description)],['Qty',x=>x.qty?x.qty.toFixed(2):'—'],['Amount',x=>money(x.amount)]],false)+'</div>';
 }
 function renderZeroTwo(source='all'){if(!isZeroTwo())return portalChooser();document.getElementById('root').innerHTML='<div class="app"><section class="main" style="width:100%"><header class="topbar"><div><b>Durga Dairy • Zero Two</b></div><div class="right"><span class="pill orange">Full Access</span><span class="workspace">All Data</span><span class="avatar">'+esc((user()?.name||'?')[0])+'</span><span class="small">'+esc(user()?.name||'')+'</span></div></header><main class="page">'+zeroTwoReport(source)+'<div class="footer">Zero Two • Read-only combined reporting • Hiren + Akash</div></main></section></div>'}
