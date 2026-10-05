@@ -7,9 +7,20 @@ function isZeroTwo(){return BUSINESS_ID==='zero-two'}
 function businessDBKey(id=BUSINESS_ID){return BASE_KEY+'-'+id}
 function selectBusiness(id){BUSINESS_ID=id;sessionStorage.setItem('durga-business',id);KEY=businessDBKey(id);location.reload()}
 function portalChooser(){document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy</h1><p>Select Access</p><div class="notice">Hiren અને Akashના અલગ data યથાવત રહેશે. Zero Two માત્ર Full Access માટે બંનેનો combined report બતાવશે.</div><div class="toolbar" style="margin-top:16px"><button class="btn" style="width:100%;margin-bottom:8px" onclick="selectBusiness(\'hiren\')">Hiren</button><button class="btn green" style="width:100%;margin-bottom:8px" onclick="selectBusiness(\'akash\')">Akash</button><button class="btn orange" style="width:100%" onclick="selectBusiness(\'zero-two\')">All</button></div></div></div>'}
-const CLOUD_API=(window.DURGA_CONFIG&&window.DURGA_CONFIG.apiBase)||'';
+const CLOUD_API=location.hostname==='durga-dairy-live.hiren-vaghasiya07.workers.dev'?'https://durga-dairy-live-api.hiren-vaghasiya07.workers.dev':((window.DURGA_CONFIG&&window.DURGA_CONFIG.apiBase)||'');
+const CLOUD_SYNC_SCHEMA='2026-10-05-v5';
 let cloudState={status:CLOUD_API?'connecting':'local',lastSync:null,error:null};
 const SYNC_ARRAYS=['users','prices','sales','collections','milk','stockPurchases','stockUsage','expenses','customers','vendors','vendorPayments','cashChecks','audit','customerSales','customerPayments','customerBills'];
+
+function cloneCloud(v){return v==null?v:JSON.parse(JSON.stringify(v))}
+function recordTime(x){return x?.updatedAt||x?.updated_at||x?.createdAt||x?.created_at||''}
+function newerRecord(a,b){
+  const ta=recordTime(a),tb=recordTime(b);
+  if(ta&&tb)return String(ta)>=String(tb)?a:b;
+  if(tb&&!ta)return b;
+  if(ta&&!tb)return a;
+  return a;
+}
 function mergeCloudDB(local,remote){
   const base=structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB));
   const out=Object.assign(base,remote||{},local||{});
@@ -18,13 +29,42 @@ function mergeCloudDB(local,remote){
     const rm=Array.isArray(remote?.[key])?remote[key]:[];
     const map=new Map();
     for(const x of rm)if(x?.id!=null)map.set(String(x.id),x);
-    for(const x of lm)if(x?.id!=null)map.set(String(x.id),x);
+    for(const x of lm)if(x?.id!=null){
+      const id=String(x.id);
+      map.set(id,map.has(id)?newerRecord(x,map.get(id)):x);
+    }
     const noId=[...rm.filter(x=>x?.id==null),...lm.filter(x=>x?.id==null)];
     out[key]=[...map.values(),...noId];
   }
   out.currentUser=local?.currentUser||remote?.currentUser||null;
-  out.version=Math.max(num(local?.version),num(remote?.version),2);
+  out.version=Math.max(num(local?.version),num(remote?.version),5);
   return out;
+}
+function cloudBusiness(remote){
+  if(BUSINESS_ID==='akash')return remote?.settings?.__businesses?.akash||null;
+  return remote||null;
+}
+function replaceFromCloud(remote){
+  const currentUser=db.currentUser;
+  const source=cloudBusiness(remote);
+  if(source){
+    db=Object.assign(
+      structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB)),
+      cloneCloud(source)
+    );
+  }
+  db.currentUser=currentUser;
+  db.businessId=BUSINESS_ID;
+  window.__cloudSnapshot=cloneCloud(db);
+  localStorage.setItem(KEY,JSON.stringify(db));
+}
+function syncSchemaKey(){return KEY+'::cloud-schema'}
+function cloudSchemaReady(){return localStorage.getItem(syncSchemaKey())===CLOUD_SYNC_SCHEMA}
+function setCloudSchema(){localStorage.setItem(syncSchemaKey(),CLOUD_SYNC_SCHEMA)}
+async function cloudStateFetch(base,token){
+  const r=await fetch(base+'/api/state?ts='+Date.now(),{method:'GET',headers:{'Authorization':'Bearer '+token,'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
+  if(!r.ok)throw new Error('Cloud read failed ('+r.status+')');
+  return await r.json();
 }
 async function cloudSync(){
   if(!CLOUD_API||!db.currentUser)return;
@@ -32,47 +72,52 @@ async function cloudSync(){
     cloudState.status='syncing';
     const base=CLOUD_API.replace(/\/$/,'');
     const token=localStorage.getItem('durga-token')||'';
-    const headers={'Content-Type':'application/json','Authorization':'Bearer '+token};
-    const stateRes=await fetch(base+'/api/state',{headers});
-    if(!stateRes.ok)throw new Error('Cloud read failed ('+stateRes.status+')');
-    const state=await stateRes.json();
+    const state=await cloudStateFetch(base,token);
     const remote=state.db||null;
+
+    // First run of this rebuild: cloud is authoritative. This intentionally
+    // removes old test data cached on phones/desktops instead of uploading it again.
+    if(!cloudSchemaReady()){
+      replaceFromCloud(remote);
+      setCloudSchema();
+      cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
+      return;
+    }
+
+    const currentUser=db.currentUser;
     if(remote){
-      const currentUser=db.currentUser;
-      if(BUSINESS_ID==='akash'){
-        const akash=remote?.settings?.__businesses?.akash;
-        if(akash) db=mergeCloudDB(db,akash);
-      }else{
-        db=mergeCloudDB(db,remote);
-      }
+      const remoteBusiness=cloudBusiness(remote);
+      if(remoteBusiness)db=mergeCloudDB(db,remoteBusiness);
       db.currentUser=currentUser;
       localStorage.setItem(KEY,JSON.stringify(db));
     }
+
     let pushDB=db;
     if(BUSINESS_ID==='akash'){
-      const baseRemote=remote?JSON.parse(JSON.stringify(remote)):{};
+      const baseRemote=remote?cloneCloud(remote):{};
       baseRemote.settings=Object.assign({},baseRemote.settings||{});
       baseRemote.settings.__businesses=Object.assign({},baseRemote.settings.__businesses||{}, {akash:db});
       baseRemote.currentUser=null;
       pushDB=baseRemote;
     }
+
     const push=await fetch(base+'/api/sync',{
-      method:'POST',headers,
+      method:'POST',
+      headers:{...({'Content-Type':'application/json','Authorization':'Bearer '+token,'Accept':'application/json'})},
       body:JSON.stringify({workspaceId:'durga-dairy-'+BUSINESS_ID,db:pushDB})
     });
     if(!push.ok)throw new Error('Cloud write failed ('+push.status+')');
     const j=await push.json();
     if(j.db){
-      const currentUser=db.currentUser;
-      if(BUSINESS_ID==='akash'){
-        const akash=j.db?.settings?.__businesses?.akash;
-        if(akash) db=mergeCloudDB(db,akash);
-      }else{
-        db=mergeCloudDB(db,j.db);
-      }
-      db.currentUser=currentUser;
+      const current=db.currentUser;
+      const business=cloudBusiness(j.db);
+      if(business)db=mergeCloudDB(db,business);
+      db.currentUser=current;
+      db.businessId=BUSINESS_ID;
       localStorage.setItem(KEY,JSON.stringify(db));
+      window.__cloudSnapshot=cloneCloud(db);
     }
+    setCloudSchema();
     cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
   }catch(e){
     cloudState={status:'offline',lastSync:cloudState.lastSync,error:e.message};
@@ -83,31 +128,30 @@ async function cloudPull(){
   try{
     const base=CLOUD_API.replace(/\/$/,'');
     const token=localStorage.getItem('durga-token')||'';
-    const r=await fetch(base+'/api/state',{headers:{'Authorization':'Bearer '+token,'Cache-Control':'no-cache'}});
-    if(!r.ok)throw new Error('Cloud read failed ('+r.status+')');
-    const j=await r.json();
+    const j=await cloudStateFetch(base,token);
     if(j.db){
       const currentUser=db.currentUser;
-      if(BUSINESS_ID==='akash'){
-        const akash=j.db?.settings?.__businesses?.akash;
-        if(!akash)return false;
-        db=mergeCloudDB(db,akash);
+      if(!cloudSchemaReady()){
+        replaceFromCloud(j.db);
+        setCloudSchema();
       }else{
-        db=mergeCloudDB(db,j.db);
+        const business=cloudBusiness(j.db);
+        if(business)db=mergeCloudDB(db,business);
+        db.currentUser=currentUser;
+        db.businessId=BUSINESS_ID;
+        localStorage.setItem(KEY,JSON.stringify(db));
+        window.__cloudSnapshot=cloneCloud(db);
       }
-      db.currentUser=currentUser;
-      localStorage.setItem(KEY,JSON.stringify(db));
       cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
       return true;
     }
-    cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
     return false;
   }catch(e){
     cloudState={status:'offline',lastSync:cloudState.lastSync,error:e.message};
     return false;
   }
 }
-function scheduleCloudSync(){clearTimeout(window.__durgaSyncTimer);window.__durgaSyncTimer=setTimeout(cloudSync,500);}
+function scheduleCloudSync(){clearTimeout(window.__durgaSyncTimer);window.__durgaSyncTimer=setTimeout(cloudSync,500)}
 function startCloudRealtimeSync(){
   clearInterval(window.__durgaRealtimeTimer);
   if(!CLOUD_API)return;
