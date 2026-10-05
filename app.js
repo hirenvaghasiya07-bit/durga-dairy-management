@@ -81,7 +81,7 @@ async function ensureCloudToken(base){
   return token;
 }
 async function cloudStateFetch(base,token){
-  const t=await ensureCloudToken(base);
+  const t=token||localStorage.getItem('durga-token')||'';
   const r=await fetch(base+'/api/state?ts='+Date.now(),{method:'GET',headers:{'Authorization':'Bearer '+t,'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
   if(!r.ok)throw new Error('Cloud read failed ('+r.status+')');
   return await r.json();
@@ -182,7 +182,7 @@ async function syncNow(){
       render(v);
     }catch(e){}
   }else{
-    alert('Cloud sync failed. Please check internet connection and try again.');
+    alert('Cloud sync failed: '+(cloudState.error||'Please check internet connection and try again.'));
   }
 }
 function scheduleCloudSync(){clearTimeout(window.__durgaSyncTimer);window.__durgaSyncTimer=setTimeout(cloudSync,500)}
