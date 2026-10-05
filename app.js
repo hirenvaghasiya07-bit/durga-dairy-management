@@ -914,4 +914,4 @@ function zeroTwoReport(source='all'){
 }
 function renderZeroTwo(source='all'){if(!isZeroTwo())return portalChooser();document.getElementById('root').innerHTML='<div class="app"><section class="main" style="width:100%"><header class="topbar"><div><b>Durga Dairy • Zero Two</b></div><div class="right"><span class="pill orange">Full Access</span><span class="workspace">All Data</span><span class="avatar">'+esc((user()?.name||'?')[0])+'</span><span class="small">'+esc(user()?.name||'')+'</span></div></header><main class="page">'+zeroTwoReport(source)+'<div class="footer">Zero Two • Read-only combined reporting • Hiren + Akash</div></main></section></div>'}
 
-init();
+// Boot deferred to bootstrap.js after all feature layers load.
