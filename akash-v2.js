@@ -14,7 +14,7 @@
   const moneyA=n=>money(num(n));
   const today=()=>iso();
   const rateAt=(date)=>{
-    const h=(a().settings?.purchaseRates||[]).filter(x=>String(x.date)<=String(date)).sort((x,y)=>String(x.date).localeCompare(String(y.date)));
+    const h=(a().purchaseRates||[]).filter(x=>String(x.date)<=String(date)).sort((x,y)=>String(x.date).localeCompare(String(y.date)));
     return h.length?num(h[h.length-1].rate):72;
   };
   const purchaseTotal=x=>num(x.vendorMorning)+num(x.vendorEvening);
