@@ -48,10 +48,10 @@ function replaceFromCloud(remote){
   const currentUser=db.currentUser;
   const source=cloudBusiness(remote);
   if(source){
-    db=Object.assign(
-      structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB)),
-      cloneCloud(source)
-    );
+    const base=structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB));
+    const cloud=cloneCloud(source);
+    if(Array.isArray(cloud.users))cloud.users=cloud.users.map(u=>({...((base.users||[]).find(x=>x.id===u.id)||{}),...u}));
+    db=Object.assign(base,cloud);
   }
   db.currentUser=currentUser;
   db.businessId=BUSINESS_ID;
