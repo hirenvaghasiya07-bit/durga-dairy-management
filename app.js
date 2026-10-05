@@ -75,13 +75,17 @@ async function cloudSync(){
     const state=await cloudStateFetch(base,token);
     const remote=state.db||null;
 
-    // First run of this rebuild: cloud is authoritative. This intentionally
-    // removes old test data cached on phones/desktops instead of uploading it again.
+    // First sync after this rebuild: keep meaningful local business data.
+    // If this device already has entries and cloud is empty, upload the local
+    // business partition instead of deleting it. If local is empty, pull cloud.
     if(!cloudSchemaReady()){
-      replaceFromCloud(remote);
+      const hasLocalData=SYNC_ARRAYS.some(k=>Array.isArray(db?.[k])&&db[k].length>0);
+      const hasRemoteData=remote && SYNC_ARRAYS.some(k=>Array.isArray(cloudBusiness(remote)?.[k])&&cloudBusiness(remote)[k].length>0);
+      if(!hasLocalData && hasRemoteData){
+        replaceFromCloud(remote);
+      }
       setCloudSchema();
-      cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
-      return;
+      // Continue into the normal merge + push path so local data reaches D1.
     }
 
     const currentUser=db.currentUser;
@@ -172,6 +176,7 @@ function startCloudRealtimeSync(){
 const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random();
 const now=()=>new Date(); const iso=()=>now().toISOString().slice(0,10); const ym=d=>String(d||'').slice(0,7); const fmtDate=d=>{const [y,m,day]=String(d||'').slice(0,10).split('-'); return day&&m&&y?`${day}-${m}-${y}`:String(d||'')}; const filterDate=(d,mode='all',value='')=>{if(!value||mode==='all')return true; if(mode==='year')return String(d).slice(0,4)===value; if(mode==='month')return String(d).slice(0,7)===value; return String(d)===value};
 const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
+const zeroTwoMoney=n=>money(n);
 const num=n=>Number(n||0); const esc=s=>String(s??'').replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m]));
 const defaultDB={version:2,users:[{id:'u_owner',name:'Hiren',email:'owner@durga.local',pin:'1234',role:'Owner',active:true},{id:'u_brother',name:'Brother',email:'brother@durga.local',pin:'3333',role:'Full Access Member',active:true},{id:'u_family',name:'Family Member',email:'family@durga.local',pin:'1111',role:'Family Member',active:true},{id:'u_staff',name:'Dairy Staff',email:'staff@durga.local',pin:'2222',role:'Staff',active:true}],currentUser:null,settings:{cowRate:72,buffaloRate:68,gheeBuyRate:1050,gheeSaleRate:0,pedaBuyRate:180,pedaSaleRate:0,salePrices:{milk82:82,milk72:72,buttermilk:30,ghee:1100,peda:400}},prices:[],sales:[],collections:[],milk:[],stockPurchases:[],stockUsage:[],expenses:[],customers:[],milkSlabs:[{id:'slab_0',name:'0%',percent:0},{id:'slab_15',name:'15%',percent:15},{id:'slab_25',name:'25%',percent:25}],vendors:[],vendorPayments:[],cashChecks:[],audit:[],customerSales:[],customerPayments:[],customerBills:[]};
 let db=load();
