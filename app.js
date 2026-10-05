@@ -87,25 +87,22 @@ async function cloudStateFetch(base,token){
   return await r.json();
 }
 async function cloudSync(){
-  if(!CLOUD_API||!db.currentUser)return;
+  if(!CLOUD_API||!db.currentUser)return false;
   try{
     cloudState.status='syncing';
     const base=CLOUD_API.replace(/\/$/,'');
-    const token=localStorage.getItem('durga-token')||'';
+    // Always refresh/validate the token first. This is important on a new PC
+    // where there is no saved token yet.
+    const token=await ensureCloudToken(base);
+    if(!token)throw new Error('Cloud login token unavailable');
     const state=await cloudStateFetch(base,token);
     const remote=state.db||null;
 
-    // First sync after this rebuild: keep meaningful local business data.
-    // If this device already has entries and cloud is empty, upload the local
-    // business partition instead of deleting it. If local is empty, pull cloud.
     if(!cloudSchemaReady()){
       const hasLocalData=SYNC_ARRAYS.some(k=>Array.isArray(db?.[k])&&db[k].length>0);
       const hasRemoteData=remote && SYNC_ARRAYS.some(k=>Array.isArray(cloudBusiness(remote)?.[k])&&cloudBusiness(remote)[k].length>0);
-      if(!hasLocalData && hasRemoteData){
-        replaceFromCloud(remote);
-      }
+      if(!hasLocalData && hasRemoteData) replaceFromCloud(remote);
       setCloudSchema();
-      // Continue into the normal merge + push path so local data reaches D1.
     }
 
     const currentUser=db.currentUser;
@@ -113,6 +110,7 @@ async function cloudSync(){
       const remoteBusiness=cloudBusiness(remote);
       if(remoteBusiness)db=mergeCloudDB(db,remoteBusiness);
       db.currentUser=currentUser;
+      db.businessId=BUSINESS_ID;
       localStorage.setItem(KEY,JSON.stringify(db));
     }
 
@@ -127,7 +125,8 @@ async function cloudSync(){
 
     const push=await fetch(base+'/api/sync',{
       method:'POST',
-      headers:{...({'Content-Type':'application/json','Authorization':'Bearer '+token,'Accept':'application/json'})},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'Accept':'application/json','Cache-Control':'no-cache'},
+      cache:'no-store',
       body:JSON.stringify({workspaceId:'durga-dairy-'+BUSINESS_ID,db:pushDB})
     });
     if(!push.ok)throw new Error('Cloud write failed ('+push.status+')');
@@ -143,29 +142,28 @@ async function cloudSync(){
     }
     setCloudSchema();
     cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
+    return true;
   }catch(e){
     cloudState={status:'offline',lastSync:cloudState.lastSync,error:e.message};
+    return false;
   }
 }
+
 async function cloudPull(){
   if(!CLOUD_API||!db.currentUser)return false;
   try{
     const base=CLOUD_API.replace(/\/$/,'');
-    const token=localStorage.getItem('durga-token')||'';
+    const token=await ensureCloudToken(base);
+    if(!token)throw new Error('Cloud login token unavailable');
     const j=await cloudStateFetch(base,token);
     if(j.db){
       const currentUser=db.currentUser;
-      if(!cloudSchemaReady()){
-        replaceFromCloud(j.db);
-        setCloudSchema();
-      }else{
-        const business=cloudBusiness(j.db);
-        if(business)db=mergeCloudDB(db,business);
-        db.currentUser=currentUser;
-        db.businessId=BUSINESS_ID;
-        localStorage.setItem(KEY,JSON.stringify(db));
-        window.__cloudSnapshot=cloneCloud(db);
-      }
+      const business=cloudBusiness(j.db);
+      if(business)db=mergeCloudDB(db,business);
+      db.currentUser=currentUser;
+      db.businessId=BUSINESS_ID;
+      localStorage.setItem(KEY,JSON.stringify(db));
+      window.__cloudSnapshot=cloneCloud(db);
       cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
       return true;
     }
@@ -175,7 +173,20 @@ async function cloudPull(){
     return false;
   }
 }
+async function syncNow(){
+  if(!CLOUD_API||!db.currentUser)return;
+  const ok=await cloudSync();
+  if(ok){
+    try{
+      const v=window.__durgaView||'dashboard';
+      render(v);
+    }catch(e){}
+  }else{
+    alert('Cloud sync failed. Please check internet connection and try again.');
+  }
+}
 function scheduleCloudSync(){clearTimeout(window.__durgaSyncTimer);window.__durgaSyncTimer=setTimeout(cloudSync,500)}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&db?.currentUser)cloudPull().then(()=>{try{render(window.__durgaView||'dashboard')}catch(e){}})});
 function startCloudRealtimeSync(){
   clearInterval(window.__durgaRealtimeTimer);
   if(!CLOUD_API)return;
@@ -244,7 +255,7 @@ function logout(){
 }
 function navItems(){return [['dashboard','⌂ Dashboard'],['sales','▣ Daily Sale'],['collections','▤ Bill Collection'],['milk','🥛 Milk Purchase'],['stock','▦ Stock Purchase'],['expenses','₹ Expense'],['customers','♙ Customers'],['vendors','▤ Vendors'],['cash','◉ Cash Flow'],['reports','▥ Reports'],['audit','◌ Activity Log'],['backup','☁ Online Backup'],['users','♙ Members']].filter(([k])=>allowed(user()?.role,k)||k==='dashboard'||k==='audit')}
 function applyDateFormat(){document.querySelectorAll('input[type="date"]').forEach(el=>{el.setAttribute('lang','en-GB');el.setAttribute('title','DD/MM/YYYY');});}
-function shell(active,body,title){document.getElementById('root').innerHTML=`<div class="app"><div class="sideBackdrop" id="sideBackdrop" onclick="closeSide()"></div><aside class="sidebar" id="side"><div class="brand">🐄 Durga Dairy<small>Management System</small></div><div class="nav">${navItems().map(([k,t])=>`<button class="${active===k?'active':''}" onclick="render('${k}')">${t}</button>`).join('')}</div><div style="position:absolute;bottom:15px;left:12px;right:12px"><button class="nav" style="width:100%;border:0;background:#ffffff12;color:#fff;padding:10px;border-radius:8px" onclick="logout()">↪ Logout</button></div></aside><section class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="menuBtn" onclick="toggleSide()">☰</button><b>${title||'Dashboard'}</b></div><div class="right"><span class="pill green">● Cloud / Local</span><span class="workspace">Durga Dairy</span><span class="avatar">${esc((user()?.name||'?')[0])}</span><span class="small">${esc(user()?.name||'')}</span></div></header><main class="page">${body}<div class="footer">Durga Dairy Management • Online + Offline prototype • Logged in as ${esc(user()?.name||'')}</div></main></section></div>`;if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});applyDateFormat()}
+function shell(active,body,title){document.getElementById('root').innerHTML=`<div class="app"><div class="sideBackdrop" id="sideBackdrop" onclick="closeSide()"></div><aside class="sidebar" id="side"><div class="brand">🐄 Durga Dairy<small>Management System</small></div><div class="nav">${navItems().map(([k,t])=>`<button class="${active===k?'active':''}" onclick="render('${k}')">${t}</button>`).join('')}</div><div style="position:absolute;bottom:15px;left:12px;right:12px"><button class="nav" style="width:100%;border:0;background:#ffffff12;color:#fff;padding:10px;border-radius:8px" onclick="logout()">↪ Logout</button></div></aside><section class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="menuBtn" onclick="toggleSide()">☰</button><b>${title||'Dashboard'}</b></div><div class="right"><button class="btn sm gray" onclick="syncNow()">↻ Sync</button><span class="pill green">● Cloud / Local</span><span class="workspace">Durga Dairy</span><span class="avatar">${esc((user()?.name||'?')[0])}</span><span class="small">${esc(user()?.name||'')}</span></div></header><main class="page">${body}<div class="footer">Durga Dairy Management • Online + Offline prototype • Logged in as ${esc(user()?.name||'')}</div></main></section></div>`;if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});applyDateFormat()}
 function toggleSide(){const side=document.getElementById('side');side?.classList.toggle('open');document.getElementById('sideBackdrop')?.classList.toggle('open',!!side?.classList.contains('open'))}function closeSide(){document.getElementById('side')?.classList.remove('open');document.getElementById('sideBackdrop')?.classList.remove('open')}
 function modal(title,body,saveFn){document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="modal"><div class="modalbox"><div class="modalhead"><h3>${title}</h3><button class="x" onclick="closeModal()">×</button></div>${body}<div class="actions"><button class="btn gray" onclick="closeModal()">Cancel</button><button class="btn" id="modalSave">Save</button></div></div></div>`);document.getElementById('modalSave').onclick=saveFn;applyDateFormat()}
 function closeModal(){document.getElementById('modal')?.remove()}
