@@ -1,2 +1,1 @@
-// Cloudflare-ready configuration. API calls use the same origin.
-window.DURGA_CONFIG={apiBase:window.location.origin};
+window.DURGA_CONFIG={apiBase:"https://durga-dairy-live-api.hiren-vaghasiya07.workers.dev"};
