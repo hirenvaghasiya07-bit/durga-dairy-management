@@ -770,8 +770,12 @@ async function doZeroTwoLogin(){
 }
 async function zeroTwoLoad(){
   try{
-    if(!CLOUD_API)throw new Error('Cloud API is not configured');
-    const url=CLOUD_API.replace(/\/$/,'')+'/api/zero-two-state?ts='+Date.now();
+    // All is served from the frontend Worker. Use its same-origin proxy so
+    // browser CORS, stale config.js, and cross-origin Service Worker issues
+    // cannot turn the JSON response into cached HTML.
+    const url=(location.hostname==='durga-dairy-live.hiren-vaghasiya07.workers.dev'
+      ? '/api/zero-two-state'
+      : (CLOUD_API.replace(/\/$/,'')+'/api/zero-two-state'))+'?ts='+Date.now();
     const r=await fetch(url,{method:'GET',headers:{'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
     const text=await r.text();
     let j=null;
