@@ -187,12 +187,18 @@ async function syncNow(){
 }
 function scheduleCloudSync(){clearTimeout(window.__durgaSyncTimer);window.__durgaSyncTimer=setTimeout(cloudSync,500)}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&db?.currentUser)cloudPull().then(()=>{try{render(window.__durgaView||'dashboard')}catch(e){}})});
+function hasBusinessLocalData(){
+  return SYNC_ARRAYS.some(k=>k!=='users'&&Array.isArray(db?.[k])&&db[k].length>0);
+}
 function startCloudRealtimeSync(){
   clearInterval(window.__durgaRealtimeTimer);
   if(!CLOUD_API)return;
   window.__durgaRealtimeTimer=setInterval(async()=>{
     if(!db.currentUser||document.hidden)return;
-    const changed=await cloudPull();
+    // Keep both directions alive. If this device has business data that was
+    // created while cloud was unavailable, retry the upload automatically.
+    // This is especially important for a phone that was offline during entry.
+    const changed=hasBusinessLocalData()?await cloudSync():await cloudPull();
     if(!changed||!document.getElementById('root')?.querySelector('.app'))return;
     if(document.getElementById('modal'))return;
     try{
@@ -202,7 +208,7 @@ function startCloudRealtimeSync(){
       else if(v==='dailyMilk')renderCustomerDailyMilk(window.__customerDailyDate||iso());
       else render(v);
     }catch(e){}
-  },3000);
+  },10000);
 }
 const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random();
 const now=()=>new Date(); const iso=()=>now().toISOString().slice(0,10); const ym=d=>String(d||'').slice(0,7); const fmtDate=d=>{const [y,m,day]=String(d||'').slice(0,10).split('-'); return day&&m&&y?`${day}-${m}-${y}`:String(d||'')}; const filterDate=(d,mode='all',value='')=>{if(!value||mode==='all')return true; if(mode==='year')return String(d).slice(0,4)===value; if(mode==='month')return String(d).slice(0,7)===value; return String(d)===value};
