@@ -6,9 +6,9 @@ function isAkash(){return BUSINESS_ID==='akash'}
 function isZeroTwo(){return BUSINESS_ID==='zero-two'}
 function businessDBKey(id=BUSINESS_ID){return BASE_KEY+'-'+id}
 function selectBusiness(id){BUSINESS_ID=id;sessionStorage.setItem('durga-business',id);KEY=businessDBKey(id);location.reload()}
-function portalChooser(){document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy</h1><p>Select Access</p><div class="notice">Hiren અને Akashના અલગ data યથાવત રહેશે. Zero Two માત્ર Full Access માટે બંનેનો combined report બતાવશે.</div><div class="toolbar" style="margin-top:16px"><button class="btn" style="width:100%;margin-bottom:8px" onclick="selectBusiness(\'hiren\')">Hiren</button><button class="btn green" style="width:100%;margin-bottom:8px" onclick="selectBusiness(\'akash\')">Akash</button><button class="btn orange" style="width:100%" onclick="selectBusiness(\'zero-two\')">All</button></div></div></div>'}
+function portalChooser(){document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy</h1><p>Select Access</p><div class="notice">Hiren અને Akashના અલગ data યથાવત રહેશે. All માત્ર Full Access માટે બંનેનો combined report બતાવશે.</div><div class="toolbar" style="margin-top:16px"><button class="btn" style="width:100%;margin-bottom:8px" onclick="selectBusiness(\'hiren\')">Hiren</button><button class="btn green" style="width:100%;margin-bottom:8px" onclick="selectBusiness(\'akash\')">Akash</button><button class="btn orange" style="width:100%" onclick="selectBusiness(\'zero-two\')">All</button></div></div></div>'}
 const CLOUD_API=location.hostname==='durga-dairy-live.hiren-vaghasiya07.workers.dev'?'https://durga-dairy-live-api.hiren-vaghasiya07.workers.dev':((window.DURGA_CONFIG&&window.DURGA_CONFIG.apiBase)||'');
-const CLOUD_SYNC_SCHEMA='2026-10-05-v5';
+const CLOUD_SYNC_SCHEMA='2026-10-05-rebuild-v1';
 let cloudState={status:CLOUD_API?'connecting':'local',lastSync:null,error:null};
 const SYNC_ARRAYS=['users','prices','sales','collections','milk','stockPurchases','stockUsage','expenses','customers','vendors','vendorPayments','cashChecks','audit','customerSales','customerPayments','customerBills'];
 
@@ -61,8 +61,28 @@ function replaceFromCloud(remote){
 function syncSchemaKey(){return KEY+'::cloud-schema'}
 function cloudSchemaReady(){return localStorage.getItem(syncSchemaKey())===CLOUD_SYNC_SCHEMA}
 function setCloudSchema(){localStorage.setItem(syncSchemaKey(),CLOUD_SYNC_SCHEMA)}
+async function ensureCloudToken(base){
+  let token=localStorage.getItem('durga-token')||'';
+  try{
+    const test=await fetch(base+'/api/state?ts='+Date.now(),{method:'GET',headers:{'Authorization':'Bearer '+token,'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
+    if(test.ok)return token;
+    if(test.status!==401&&test.status!==403)return token;
+  }catch(e){}
+  const u=db.users.find(x=>x.id===db.currentUser);
+  if(!u?.email||!u?.pin)return token;
+  try{
+    const lr=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({email:u.email,password:u.pin,workspaceId:'durga-dairy-'+BUSINESS_ID})});
+    if(lr.ok){
+      const j=await lr.json();
+      token=j.token||'';
+      if(token)localStorage.setItem('durga-token',token);
+    }
+  }catch(e){}
+  return token;
+}
 async function cloudStateFetch(base,token){
-  const r=await fetch(base+'/api/state?ts='+Date.now(),{method:'GET',headers:{'Authorization':'Bearer '+token,'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
+  const t=await ensureCloudToken(base);
+  const r=await fetch(base+'/api/state?ts='+Date.now(),{method:'GET',headers:{'Authorization':'Bearer '+t,'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
   if(!r.ok)throw new Error('Cloud read failed ('+r.status+')');
   return await r.json();
 }
@@ -800,19 +820,34 @@ function zeroTwoSum(arr,key){return (arr||[]).reduce((a,x)=>a+zeroTwoNum(x?.[key
 function zeroTwoSourceData(source){const z=window.__zeroTwoData||{};return source==='hiren'?z.hiren:source==='akash'?z.akash:{}}
 function zeroTwoStats(source){
   const d=zeroTwoSourceData(source),sales=(d.sales||[]),customerSales=(d.customerSales||[]),milk=(d.milk||[]),stock=(d.stockPurchases||[]),expenses=(d.expenses||[]),collections=(d.collections||[]),customerPayments=(d.customerPayments||[]);
-  const normalSales=zeroTwoSum(sales,'amount'),customerMilkSales=zeroTwoSum(customerSales,'amount');
-  const salesTotal=normalSales+customerMilkSales;
+  const currentMonth=ym(iso());
+  const counterTotal=sales.filter(x=>ym(x.date)===currentMonth).reduce((a,x)=>a+zeroTwoNum(x.amount),0);
+  const fixedCurrent=customerSales.filter(x=>ym(x.date)===currentMonth).reduce((a,x)=>a+zeroTwoNum(x.amount),0);
+  const fixedClosed=customerSales.filter(x=>ym(x.date)<currentMonth).reduce((a,x)=>a+zeroTwoNum(x.amount),0);
+  const fixedFuture=customerSales.filter(x=>ym(x.date)>currentMonth).reduce((a,x)=>a+zeroTwoNum(x.amount),0);
+  const grandSales=counterTotal+fixedClosed;
   const milkSold=customerSales.reduce((a,x)=>a+zeroTwoNum(x.qty),0)+sales.filter(x=>String(x.product||'').toLowerCase()==='milk').reduce((a,x)=>a+zeroTwoNum(x.qty),0);
   const purchaseTotal=zeroTwoSum(milk,'total')+zeroTwoSum(stock,'total');
   const purchasePaid=zeroTwoSum(milk,'paid')+zeroTwoSum(stock,'paid');
   const payable=milk.reduce((a,x)=>a+Math.max(0,zeroTwoNum(x.balance||zeroTwoNum(x.total)-zeroTwoNum(x.paid))),0)+stock.reduce((a,x)=>a+Math.max(0,zeroTwoNum(x.balance||zeroTwoNum(x.total)-zeroTwoNum(x.paid))),0);
   const expenseTotal=zeroTwoSum(expenses,'amount');
   const collectionTotal=zeroTwoSum(collections,'amount')+zeroTwoSum(customerPayments,'amount');
-  const customerReceivable=(d.customers||[]).reduce((a,c)=>{try{const m=typeof customerMonthSummary==='function'?customerMonthSummary(c.id,ym(iso())):null;return a+Math.max(0,zeroTwoNum(m?.bill)-zeroTwoNum(m?.paid))}catch(e){return a}},0);
-  const cashIn=salesTotal+collectionTotal,cashOut=zeroTwoSum(expenses,'amount')+purchasePaid,cashAvailable=cashIn-cashOut;
-  const profit=salesTotal-purchaseTotal-expenseTotal;
+  const months=new Set([...customerSales.map(x=>ym(x.date)),...customerPayments.map(x=>String(x.month||ym(x.date)))].filter(Boolean));
+  let customerReceivable=0;
+  for(const month of months){
+    for(const c of (d.customers||[])){
+      const bill=customerSales.filter(x=>x.customerId===c.id&&ym(x.date)===month).reduce((a,x)=>a+zeroTwoNum(x.amount),0);
+      const paid=customerPayments.filter(x=>x.customerId===c.id&&String(x.month||ym(x.date))===month).reduce((a,x)=>a+zeroTwoNum(x.amount),0);
+      const adjust=customerPayments.filter(x=>x.customerId===c.id&&String(x.month||ym(x.date))===month).reduce((a,x)=>a+zeroTwoNum(x.adjustment),0);
+      customerReceivable+=Math.max(0,bill-paid-adjust);
+    }
+  }
+  const cashIn=grandSales+fixedCurrent+collectionTotal;
+  const cashOut=zeroTwoSum(expenses,'amount')+purchasePaid;
+  const cashAvailable=cashIn-cashOut;
+  const profit=grandSales+fixedCurrent-purchaseTotal-expenseTotal;
   const expenseBy={};expenses.forEach(x=>{const k=x.category||'Other';expenseBy[k]=(expenseBy[k]||0)+zeroTwoNum(x.amount)});
-  return {salesTotal,milkSold,purchaseTotal,purchasePaid,payable,expenseTotal,collectionTotal,customerReceivable,cashAvailable,profit,expenseBy,dailyCount:customerSales.length+sales.length,sales,customerSales,milk,stock,expenses,collections,customerPayments}
+  return {salesTotal:grandSales,counterTotal,fixedCurrent,fixedClosed,fixedFuture,milkSold,purchaseTotal,purchasePaid,payable,expenseTotal,collectionTotal,customerReceivable,cashAvailable,profit,expenseBy,dailyCount:0,sales,customerSales,milk,stock,expenses,collections,customerPayments};
 }
 function zeroTwoMergedStats(){const h=zeroTwoStats('hiren'),a=zeroTwoStats('akash');return {salesTotal:h.salesTotal+a.salesTotal,milkSold:h.milkSold+a.milkSold,purchaseTotal:h.purchaseTotal+a.purchaseTotal,purchasePaid:h.purchasePaid+a.purchasePaid,payable:h.payable+a.payable,expenseTotal:h.expenseTotal+a.expenseTotal,collectionTotal:h.collectionTotal+a.collectionTotal,customerReceivable:h.customerReceivable+a.customerReceivable,cashAvailable:h.cashAvailable+a.cashAvailable,profit:h.profit+a.profit,dailyCount:h.dailyCount+a.dailyCount,expenseBy:Object.entries({...h.expenseBy}).concat(Object.entries(a.expenseBy)).reduce((o,[k,v])=>(o[k]=(o[k]||0)+v,o),{})}}
 function zeroTwoReportModal(){
@@ -822,18 +857,20 @@ function zeroTwoReportModal(){
 function zeroTwoHistoryRows(source){const z=zeroTwoSourceData(source);const sales=(z.sales||[]).map(x=>({date:x.date,kind:'Sale',description:x.product||'Sale',qty:zeroTwoNum(x.qty),amount:zeroTwoNum(x.amount)}));const cust=(z.customerSales||[]).map(x=>({date:x.date,kind:'Customer Milk',description:x.customerId||'Customer',qty:zeroTwoNum(x.qty),amount:zeroTwoNum(x.amount)}));const exp=(z.expenses||[]).map(x=>({date:x.date,kind:'Expense',description:x.category||x.description||'Expense',qty:0,amount:-zeroTwoNum(x.amount)}));return [...sales,...cust,...exp].sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,80)}
 function zeroTwoSourceName(source){return source==='hiren'?'Hiren':source==='akash'?'Akash':'All'}
 function zeroTwoDuesRows(source){
-  const d=zeroTwoSourceData(source),month=ym(iso()),rows=[];
+  const d=zeroTwoSourceData(source),months=new Set([...((d.customerSales||[]).map(x=>ym(x.date))),...((d.customerPayments||[]).map(x=>String(x.month||ym(x.date))))].filter(Boolean)),rows=[];
   for(const c of (d.customers||[])){
-    const sales=(d.customerSales||[]).filter(x=>x.customerId===c.id&&ym(x.date)===month);
-    const bill=sales.reduce((a,x)=>a+zeroTwoNum(x.amount),0);
-    const qty=sales.reduce((a,x)=>a+zeroTwoNum(x.qty),0);
-    const pays=(d.customerPayments||[]).filter(x=>x.customerId===c.id&&x.month===month);
-    const paid=pays.reduce((a,x)=>a+zeroTwoNum(x.amount),0);
-    const adjust=pays.reduce((a,x)=>a+zeroTwoNum(x.adjustment),0);
-    const balance=Math.max(0,bill-paid-adjust);
-    if(balance>0||bill>0)rows.push({source:zeroTwoSourceName(source),customer:c.name||'Customer',qty,bill,paid,adjust,balance});
+    for(const month of months){
+      const sales=(d.customerSales||[]).filter(x=>x.customerId===c.id&&ym(x.date)===month);
+      const bill=sales.reduce((a,x)=>a+zeroTwoNum(x.amount),0);
+      const qty=sales.reduce((a,x)=>a+zeroTwoNum(x.qty),0);
+      const pays=(d.customerPayments||[]).filter(x=>x.customerId===c.id&&String(x.month||ym(x.date))===month);
+      const paid=pays.reduce((a,x)=>a+zeroTwoNum(x.amount),0);
+      const adjust=pays.reduce((a,x)=>a+zeroTwoNum(x.adjustment),0);
+      const balance=Math.max(0,bill-paid-adjust);
+      if(balance>0||bill>0)rows.push({source:zeroTwoSourceName(source),customer:c.name||'Customer',month,qty,bill,paid,adjust,balance,status:month>ym(iso())?'Future Bill':balance>0?'Pending':'Paid'});
+    }
   }
-  return rows;
+  return rows.sort((a,b)=>String(b.month).localeCompare(String(a.month))||String(a.customer).localeCompare(String(b.customer)));
 }
 function zeroTwoReport(source='all'){
   const h=zeroTwoStats('hiren'),a=zeroTwoStats('akash'),r=source==='hiren'?h:source==='akash'?a:zeroTwoMergedStats(),label=zeroTwoSourceName(source);
@@ -841,8 +878,9 @@ function zeroTwoReport(source='all'){
   const exp=Object.entries(r.expenseBy).sort((x,y)=>y[1]-x[1]);
   const dues=source==='all'?[...zeroTwoDuesRows('hiren'),...zeroTwoDuesRows('akash')]:zeroTwoDuesRows(source);
   const duesTotal=dues.reduce((a,x)=>a+x.balance,0);
-  const duesTable=tableRows(dues.map((x,i)=>({...x,id:String(i),_entity:'zeroTwoDues'})),[['Source',x=>x.source],['Customer',x=>esc(x.customer)],['Milk Qty',x=>x.qty.toFixed(2)+' L'],['Bill',x=>money(x.bill)],['Paid',x=>money(x.paid)],['Adjustment',x=>money(x.adjust)],['Due',x=>'<b>'+money(x.balance)+'</b>']],false);
-  return '<div class="sectionhead"><div><h1>Zero Two • '+label+' Report</h1><div class="muted">Hiren + Akash data reflected here only. Original partitions unchanged.</div></div><div class="toolbar"><button class="btn orange" onclick="zeroTwoReportModal()">Filter</button><button class="btn gray" onclick="logout()">Logout</button></div></div><div class="grid">'+metric('Total Sales',zeroTwoMoney(r.salesTotal))+metric('Milk Sold',r.milkSold.toFixed(2)+' L')+metric('Daily Entry Count',r.dailyCount)+metric('Customer Receivable',zeroTwoMoney(r.customerReceivable))+metric('Purchase Payable',zeroTwoMoney(r.payable))+metric('Total Expenses',zeroTwoMoney(r.expenseTotal))+metric('Profit / Loss',zeroTwoMoney(r.profit),r.profit>=0?'Profit':'Loss')+metric('Cash Available',zeroTwoMoney(r.cashAvailable))+'</div><div class="two section"><div class="card"><h2>Business-wise</h2>'+[['Hiren',h],['Akash',a]].map(([n,x])=>'<div class="notice" style="margin-bottom:8px"><b>'+n+'</b><br>Sales: '+money(x.salesTotal)+' • Milk: '+x.milkSold.toFixed(2)+' L • Payable: '+money(x.payable)+' • Expenses: '+money(x.expenseTotal)+' • P/L: '+money(x.profit)+' • Cash: '+money(x.cashAvailable)+'</div>').join('')+'</div><div class="card"><h2>Expense by Category</h2>'+(exp.map(([k,v])=>'<p style="display:flex;justify-content:space-between;margin:8px 0"><span>'+esc(k)+'</span><b>'+money(v)+'</b></p>').join('')||'<p class="muted">No expenses</p>')+'</div></div><div class="card section"><div class="sectionhead"><h2>Daily Dues / Customer Receivable</h2><span class="muted">Current month • Total Due: '+money(duesTotal)+'</span></div>'+duesTable+'</div><div class="card section"><div class="sectionhead"><h2>History</h2><span class="muted">Latest 80 records</span></div>'+tableRows(rows.map((x,i)=>({...x,id:String(i),_entity:'zeroTwo'})),[['Date',x=>fmtDate(x.date)],['Source',x=>x.source||label],['Type',x=>esc(x.kind)],['Description',x=>esc(x.description)],['Qty',x=>x.qty?x.qty.toFixed(2):'—'],['Amount',x=>money(x.amount)]],false)+'</div>';
+  const duesTable=tableRows(dues.map((x,i)=>({...x,id:String(i),_entity:'zeroTwoDues'})),[['Source',x=>x.source],['Customer',x=>esc(x.customer)],['Month',x=>fmtDate(String(x.month)+'-01')],['Milk Qty',x=>x.qty.toFixed(2)+' L'],['Bill',x=>money(x.bill)],['Paid',x=>money(x.paid)],['Adjustment',x=>money(x.adjust)],['Due',x=>'<b>'+money(x.balance)+'</b>'],['Status',x=>'<span class="pill '+(x.status==='Pending'?'orange':x.status==='Future Bill'?'red':'green')+'">'+esc(x.status)+'</span>']],false);
+  const businessCards=[['Hiren',h],['Akash',a]].map(([n,x])=>'<div class="notice" style="margin-bottom:8px"><b>'+n+'</b><br>Grand Sales: '+money(x.salesTotal)+' • Dairy Counter: '+money(x.counterTotal)+' • Fixed Customer Sales: '+money(x.fixedCurrent)+' • Milk: '+x.milkSold.toFixed(2)+' L • Vendor Payable: '+money(x.payable)+' • Bill Collection: '+money(x.collectionTotal)+' • Customer Receivable: '+money(x.customerReceivable)+' • Expenses: '+money(x.expenseTotal)+' • P/L: '+money(x.profit)+'</div>').join('');
+  return '<div class="sectionhead"><div><h1>All Master • '+label+' Report</h1><div class="muted">Read-only combined reporting. Hiren and Akash data remain separate.</div></div><div class="toolbar"><button class="btn orange" onclick="zeroTwoReportModal()">Filter</button><button class="btn gray" onclick="logout()">Logout</button></div></div><div class="grid">'+metric('Grand Total Sales',zeroTwoMoney(r.salesTotal),'Fixed Customer Sales added after month close')+metric('Dairy Counter • Daily Cash',zeroTwoMoney(r.counterTotal),'Current month counter sales')+metric('Fixed Customer Sales',zeroTwoMoney(r.fixedCurrent),'Current month, not yet added to Grand Sales')+metric('Milk Sold',r.milkSold.toFixed(2)+' L')+metric('Vendor Payable',zeroTwoMoney(r.payable))+metric('Bill Collection',zeroTwoMoney(r.collectionTotal))+metric('Customer Receivable',zeroTwoMoney(r.customerReceivable),'Includes future pending bills')+metric('Total Expenses',zeroTwoMoney(r.expenseTotal))+metric('Profit / Loss',zeroTwoMoney(r.profit),r.profit>=0?'Profit':'Loss')+metric('Cash Available',zeroTwoMoney(r.cashAvailable))+'</div><div class="two section"><div class="card"><h2>Business-wise</h2>'+businessCards+'</div><div class="card"><h2>Expense by Category</h2>'+(exp.map(([k,v])=>'<p style="display:flex;justify-content:space-between;margin:8px 0"><span>'+esc(k)+'</span><b>'+money(v)+'</b></span></p>').join('')||'<p class="muted">No expenses</p>')+'</div></div><div class="charts section"><div class="card"><h2>Sales Comparison</h2><div class="two"><div class="notice"><b>Hiren</b><br>'+money(h.salesTotal)+'</div><div class="notice"><b>Akash</b><br>'+money(a.salesTotal)+'</div></div></div><div class="card"><h2>Milk Sold Comparison</h2><div class="two"><div class="notice"><b>Hiren</b><br>'+h.milkSold.toFixed(2)+' L</div><div class="notice"><b>Akash</b><br>'+a.milkSold.toFixed(2)+' L</div></div></div><div class="card"><h2>Customer Receivable Comparison</h2><div class="two"><div class="notice"><b>Hiren</b><br>'+money(h.customerReceivable)+'</div><div class="notice"><b>Akash</b><br>'+money(a.customerReceivable)+'</div></div></div></div><div class="card section"><div class="sectionhead"><h2>Customer Bill Pending / Receivable</h2><span class="muted">All unpaid months, including future-dated bills • Total: '+money(duesTotal)+'</span></div>'+duesTable+'</div><div class="card section"><div class="sectionhead"><h2>Recent Transactions</h2><span class="muted">Date • Business • Type • Description • Amount</span></div>'+tableRows(rows.map((x,i)=>({...x,id:String(i),_entity:'zeroTwo'})),[['Date',x=>fmtDate(x.date)],['Business',x=>x.source||label],['Type',x=>esc(x.kind)],['Description',x=>esc(x.description)],['Qty',x=>x.qty?x.qty.toFixed(2):'—'],['Amount',x=>money(x.amount)]],false)+'</div>';
 }
 function renderZeroTwo(source='all'){if(!isZeroTwo())return portalChooser();document.getElementById('root').innerHTML='<div class="app"><section class="main" style="width:100%"><header class="topbar"><div><b>Durga Dairy • Zero Two</b></div><div class="right"><span class="pill orange">Full Access</span><span class="workspace">All Data</span><span class="avatar">'+esc((user()?.name||'?')[0])+'</span><span class="small">'+esc(user()?.name||'')+'</span></div></header><main class="page">'+zeroTwoReport(source)+'<div class="footer">Zero Two • Read-only combined reporting • Hiren + Akash</div></main></section></div>'}
 
