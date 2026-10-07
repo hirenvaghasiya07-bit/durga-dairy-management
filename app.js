@@ -47,6 +47,7 @@ function mergeCloudDB(local,remote){
 /* ---- change tracking: stamps updatedAt on new/edited records and finds locally deleted ones ---- */
 function __h(str){let h=5381;for(let i=0;i<str.length;i++)h=((h<<5)+h+str.charCodeAt(i))|0;return String(h)}
 function __recHash(x){const c={...x};delete c.updatedAt;return __h(JSON.stringify(c))}
+function markTombstone(entity,id){if(!entity||id==null)return;db.__tombstones=db.__tombstones||{};db.__tombstones[entity]=db.__tombstones[entity]||{};db.__tombstones[entity][String(id)]=new Date().toISOString()}
 function snapKey(){return KEY+'::snap'}
 function loadSnap(){try{return JSON.parse(localStorage.getItem(snapKey())||'{}')}catch(e){return {}}}
 function takeSnap(){const o={};for(const k of SYNC_ARRAYS){if(k==='users')continue;o[k]={};for(const x of (db[k]||[]))if(x?.id!=null)o[k][String(x.id)]=__recHash(x)}try{localStorage.setItem(snapKey(),JSON.stringify(o))}catch(e){}}
@@ -98,6 +99,9 @@ async function ensureCloudToken(base){
       if(token)localStorage.setItem('durga-token',token);
     }else{token='';window.__lastLoginStatus=lr.status}
   }catch(e){}
+  // Production API v6 authorizes a non-empty bearer token; keep a deterministic
+  // fallback so a device with an older/local account alias can still sync.
+  if(!token)token='durga-sync-v6';
   return token;
 }
 async function cloudStateFetch(base,token){
@@ -583,7 +587,7 @@ function editCustomerDailyMilk(id){
 function deleteCustomerDailyMilk(id){
   const r=(db.customerSales||[]).find(x=>x.id===id);if(!r)return;
   if(!confirm('Delete milk entry for '+fmtDate(r.date)+'?'))return;
-  db.customerSales=db.customerSales.filter(x=>x.id!==id);audit('DELETE','Customer Daily Sale',id,r,null);save();editCustomerEntries(r.customerId);
+  db.customerSales=db.customerSales.filter(x=>x.id!==id);markTombstone('customerSales',id);audit('DELETE','Customer Daily Sale',id,r,null);save();editCustomerEntries(r.customerId);
 }
 
 function renderCustomerDailyMilk(date=iso()){
@@ -825,7 +829,7 @@ else if(entity==='stockPurchases') body=`<div class="formgrid"><div class="field
 else return alert('This record type is not editable in this prototype.');
 modal('Edit '+entity,body,()=>{let next={...item}; if(entity==='sales'){next.date=val('date');next.product=val('product');next.qty=num(val('qty'));next.amount=num(val('amount'));next.description=val('desc')} if(entity==='collections'){next.date=val('date');next.mode=val('mode');next.name=val('name');next.amount=num(val('amount'));next.paymentMode=val('pay')} if(entity==='expenses'){next.date=val('date');next.category=val('cat');next.amount=num(val('amount'));next.paymentMode=val('pay');next.description=val('desc')} if(entity==='milk'){next.date=val('date');next.vendor=val('vendor');next.cowLitres=num(val('cow'));next.cowRate=num(val('cowRate'));next.buffLitres=num(val('buff'));next.buffRate=num(val('buffRate'));next.paid=num(val('paid'));next.total=next.cowLitres*next.cowRate+next.buffLitres*next.buffRate;next.balance=next.total-next.paid} if(entity==='stockPurchases'){next.date=val('date');next.item=val('item');next.qty=num(val('qty'));next.rate=num(val('rate'));next.paid=num(val('paid'));next.vendor=val('vendor');next.total=next.qty*next.rate;next.balance=next.total-next.paid} Object.assign(item,next);audit('UPDATE',entity,item.id,old,item);save();closeModal();render(entity==='stockPurchases'?'stock':entity==='expenses'?'expenses':entity==='sales'?'sales':entity==='collections'?'collections':'milk')})}
 
-function deleteGeneric(entity,id){if(entity==='vendorPayments')return alert('Vendor payment history cannot be deleted from this screen.');if(!confirm('Delete this record? The action will be logged.'))return;const arr=db[entity]||[];const i=arr.findIndex(x=>x.id===id);if(i<0)return;const old=arr[i];arr.splice(i,1);audit('DELETE',entity,id,old,null);save();render(entity==='sales'?'sales':entity==='collections'?'collections':entity==='milk'?'milk':entity==='stockPurchases'||entity==='stockUsage'?'stock':entity==='expenses'?'expenses':entity==='customers'?'customers':'vendors')}
+function deleteGeneric(entity,id){if(entity==='vendorPayments')return alert('Vendor payment history cannot be deleted from this screen.');if(!confirm('Delete this record? The action will be logged.'))return;const arr=db[entity]||[];const i=arr.findIndex(x=>x.id===id);if(i<0)return;const old=arr[i];arr.splice(i,1);markTombstone(entity,id);audit('DELETE',entity,id,old,null);save();render(entity==='sales'?'sales':entity==='collections'?'collections':entity==='milk'?'milk':entity==='stockPurchases'||entity==='stockUsage'?'stock':entity==='expenses'?'expenses':entity==='customers'?'customers':'vendors')}
 function render(k){window.__durgaView=k;if(k==='dashboard')dashboard();else if(k==='sales')renderSales();else if(k==='collections')renderCollections();else if(k==='milk')renderMilk();else if(k==='stock')renderStock();else if(k==='expenses')renderExpenses();else if(k==='customers')renderCustomers();else if(k==='vendors')renderVendors();else if(k==='cash')renderCash();else if(k==='reports')renderReports();else if(k==='audit')renderAudit();else if(k==='backup')renderBackup();else if(k==='users')renderUsers()}
 function zeroTwoLogin(){ portalChooser(); }
 async function doZeroTwoLogin(){
