@@ -1,8 +1,8 @@
-const CACHE='durga-dairy-v24';
+const CACHE='durga-dairy-v25';
 self.addEventListener('install',e=>{
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then(c=>c.addAll([
-    './','./index.html','./app.js?v=20261007-1000','./config.js?v=20261007-1000','./manifest.json','./akash-v2.js?v=20261007-1000','./akash-v2-fix.js?v=20261007-1000','./all-v2.js?v=20261007-1000','./bootstrap.js?v=20261007-1000'
+    './','./index.html','./app.js?v=20261007-1600','./config.js?v=20261007-1600','./manifest.json','./akash-v2.js?v=20261007-1600','./akash-v2-fix.js?v=20261007-1600','./all-v2.js?v=20261007-1600','./bootstrap.js?v=20261007-1600'
   ])));
 });
 self.addEventListener('activate',e=>{
