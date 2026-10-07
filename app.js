@@ -21,23 +21,42 @@ function newerRecord(a,b){
   if(ta&&!tb)return a;
   return a;
 }
+function mergeTombs(a,b){const o={};for(const t of [a,b])for(const k of Object.keys(t||{})){o[k]=o[k]||{};for(const id of Object.keys(t[k]||{}))o[k][id]=t[k][id]}return o}
 function mergeCloudDB(local,remote){
   const base=structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB));
   const out=Object.assign(base,remote||{},local||{});
+  const tomb=mergeTombs(local?.__tombstones,remote?.__tombstones);
   for(const key of SYNC_ARRAYS){
     const lm=Array.isArray(local?.[key])?local[key]:[];
     const rm=Array.isArray(remote?.[key])?remote[key]:[];
+    const dead=tomb[key]||{};
     const map=new Map();
-    for(const x of rm)if(x?.id!=null)map.set(String(x.id),x);
-    for(const x of lm)if(x?.id!=null){
+    for(const x of rm)if(x?.id!=null&&!dead[String(x.id)])map.set(String(x.id),x);
+    for(const x of lm)if(x?.id!=null&&!dead[String(x.id)]){
       const id=String(x.id);
       map.set(id,map.has(id)?newerRecord(x,map.get(id)):x);
     }
     const noId=[...rm.filter(x=>x?.id==null),...lm.filter(x=>x?.id==null)];
     out[key]=[...map.values(),...noId];
   }
+  out.__tombstones=tomb;
   out.currentUser=local?.currentUser||remote?.currentUser||null;
   out.version=Math.max(num(local?.version),num(remote?.version),5);
+  return out;
+}
+/* ---- change tracking: stamps updatedAt on new/edited records and finds locally deleted ones ---- */
+function __h(str){let h=5381;for(let i=0;i<str.length;i++)h=((h<<5)+h+str.charCodeAt(i))|0;return String(h)}
+function __recHash(x){const c={...x};delete c.updatedAt;return __h(JSON.stringify(c))}
+function snapKey(){return KEY+'::snap'}
+function loadSnap(){try{return JSON.parse(localStorage.getItem(snapKey())||'{}')}catch(e){return {}}}
+function takeSnap(){const o={};for(const k of SYNC_ARRAYS){if(k==='users')continue;o[k]={};for(const x of (db[k]||[]))if(x?.id!=null)o[k][String(x.id)]=__recHash(x)}try{localStorage.setItem(snapKey(),JSON.stringify(o))}catch(e){}}
+function stampChanges(){
+  const snap=loadSnap(),t=new Date().toISOString();
+  for(const k of SYNC_ARRAYS){if(k==='users')continue;const s=snap[k]||{};for(const x of (db[k]||[])){if(!x||typeof x!=='object'||x.id==null)continue;const id=String(x.id);if(s[id]!==__recHash(x)){x.updatedAt=t}if(!x.createdAt)x.createdAt=x.updatedAt||t}}
+}
+function findDeleted(){
+  const snap=loadSnap(),out={};
+  for(const k of SYNC_ARRAYS){if(k==='users')continue;const ids=new Set((db[k]||[]).map(x=>String(x?.id)));const gone=Object.keys(snap[k]||{}).filter(id=>!ids.has(id));if(gone.length)out[k]=gone}
   return out;
 }
 function cloudBusiness(remote){
@@ -69,14 +88,15 @@ async function ensureCloudToken(base){
     if(test.status!==401&&test.status!==403)return token;
   }catch(e){}
   const u=db.users.find(x=>x.id===db.currentUser);
-  if(!u?.email||!u?.pin)return token;
+  const pw=sessionStorage.getItem('durga-pin')||u?.pin;
+  if(!u?.email||!pw)return token;
   try{
-    const lr=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({email:u.email,password:u.pin,workspaceId:'durga-dairy-'+BUSINESS_ID})});
+    const lr=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({email:u.email,password:pw,workspaceId:'durga-dairy-'+BUSINESS_ID})});
     if(lr.ok){
       const j=await lr.json();
       token=j.token||'';
       if(token)localStorage.setItem('durga-token',token);
-    }
+    }else{token='';window.__lastLoginStatus=lr.status}
   }catch(e){}
   return token;
 }
@@ -127,7 +147,7 @@ async function cloudSync(){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'Accept':'application/json','Cache-Control':'no-cache'},
       cache:'no-store',
-      body:JSON.stringify({workspaceId:'durga-dairy-'+BUSINESS_ID,db:pushDB})
+      body:JSON.stringify({workspaceId:'durga-dairy-'+BUSINESS_ID,db:pushDB,deleted:findDeleted()})
     });
     if(!push.ok)throw new Error('Cloud write failed ('+push.status+')');
     const j=await push.json();
@@ -141,10 +161,11 @@ async function cloudSync(){
       window.__cloudSnapshot=cloneCloud(db);
     }
     setCloudSchema();
+    takeSnap();
     cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
     return true;
   }catch(e){
-    cloudState={status:'offline',lastSync:cloudState.lastSync,error:e.message};
+    cloudState={status:'offline',lastSync:cloudState.lastSync,error:e.message+(window.__lastLoginStatus?' (login '+window.__lastLoginStatus+')':'')};
     return false;
   }
 }
@@ -226,7 +247,7 @@ function getSaleRate(key){ensureSalesConfig();return num(db.settings.salePrices[
 function setSaleRate(key,rate){ensureSalesConfig();db.settings.salePrices[key]=num(rate);save()}
 function customerRateFor(c,key,date){if(!c)return getSaleRate(key);const h=(c.priceHistory||[]).filter(x=>x.productKey===key||(!x.productKey&&c.saleKey===key)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));let rate=num(c.rate);for(const x of h){if(String(x.date)<=String(date))rate=num(x.rate)}return rate||getSaleRate(key)}
 function addCustomerPriceHistory(c,key,date,rate){c.priceHistory=c.priceHistory||[];c.priceHistory.push({id:uid(),productKey:key,date,rate:num(rate)});c.priceHistory.sort((a,b)=>String(a.date).localeCompare(String(b.date)))}
-function save(){ensureSalesConfig();localStorage.setItem(KEY,JSON.stringify(db));scheduleCloudSync()}
+function save(){ensureSalesConfig();try{stampChanges()}catch(e){}localStorage.setItem(KEY,JSON.stringify(db));scheduleCloudSync()}
 function user(){return db.users.find(u=>u.id===db.currentUser)}
 function audit(action,entity,recordId,before=null,after=null){db.audit.push({id:uid(),at:new Date().toISOString(),userId:user()?.id||'system',userName:user()?.name||'System',action,entity,recordId,before,after});save()}
 function allowed(role,feature){if(role==='Owner'||role==='Full Access Member')return true;if(role==='Manager')return !['users','cashSettings'].includes(feature);if(role==='Family Member')return ['expenses'].includes(feature);if(role==='Staff')return ['sales'].includes(feature);return false}
@@ -246,12 +267,12 @@ async function init(){
 }
 function login(){const options=db.users.filter(u=>u.active).map(u=>'<option value="'+u.id+'">'+esc(u.name)+' • '+esc(u.role)+'</option>').join('');document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy • '+businessName()+'</h1><p>Online Management System</p><div class="notice">Sign in with your own account. Every entry is recorded with the member name and time.</div><div class="field"><label>Login</label><select id="loginUser">'+options+'</select></div><div class="field"><label>Password / PIN</label><input id="loginPin" type="password" autocomplete="current-password" placeholder="Password"></div><button class="btn" style="width:100%;margin-top:16px" onclick="doLogin()">Login</button><button class="linkbtn" onclick="forgotPassword()">Forgot Password?</button><p class="small">First-run demo: Hiren 1234 • Brother 3333 • Family 1111 • Staff 2222</p></div></div>'}
 function forgotPassword(){modal('Forgot Password','<p class="muted">Enter your account email. In production this will send a secure reset link.</p><div class="field"><label>Email</label><input id="resetEmail" type="email" placeholder="you@example.com"></div>',async()=>{const email=val('resetEmail');if(!email)return alert('Email required.');if(CLOUD_API){try{const r=await fetch(CLOUD_API.replace(/\/$/, '')+'/api/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});alert(r.ok?'If the account exists, a reset link has been sent.':'Reset request failed.')}catch(e){alert('Reset service unavailable.')}}else alert('Password reset is ready for cloud deployment; connect the online API to send the secure reset link.');closeModal()})}
-async function doLogin(){const id=document.getElementById('loginUser').value,p=document.getElementById('loginPin').value,u=db.users.find(x=>x.id===id);if(!u||u.pin!==p)return alert('Wrong password.');if(CLOUD_API){try{const r=await fetch(CLOUD_API.replace(/\/$/, '')+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:u.email,password:p,workspaceId:'durga-dairy-'+BUSINESS_ID})});if(r.ok){const j=await r.json();localStorage.setItem('durga-token',j.token||'')}}catch(e){cloudState={status:'offline',error:e.message}}}db.currentUser=id;save();audit('LOGIN','session',id,null,{name:u.name});render('dashboard');cloudSync()}
+async function doLogin(){const id=document.getElementById('loginUser').value,p=document.getElementById('loginPin').value;let u=db.users.find(x=>x.id===id);if(!u)return alert('Wrong password.');let cloudOk=false;if(CLOUD_API){try{const r=await fetch(CLOUD_API.replace(/\/$/, '')+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:u.email,password:p,workspaceId:'durga-dairy-'+BUSINESS_ID})});if(r.ok){const j=await r.json();if(j.token){localStorage.setItem('durga-token',j.token);cloudOk=true}}}catch(e){cloudState={status:'offline',error:e.message}}}if(u.pin!==p&&!cloudOk)return alert('Wrong password.');if(u.pin!==p&&cloudOk){u.pin=p}sessionStorage.setItem('durga-pin',p);db.currentUser=id;save();audit('LOGIN','session',id,null,{name:u.name});render('dashboard');cloudSync()}
 function logout(){
   const oldUser=db.currentUser;
   db.currentUser=null;
   try{ if(!isZeroTwo()) localStorage.setItem(KEY,JSON.stringify(db)); }catch(e){}
-  localStorage.removeItem('durga-token');
+  localStorage.removeItem('durga-token');sessionStorage.removeItem('durga-pin');
   cloudState={status:CLOUD_API?'connecting':'local',lastSync:null,error:null};
   closeSide();
   closeModal();
@@ -820,9 +841,11 @@ function zeroTwoCombineBusiness(local,remote){
   if(!local)return remote||{};
   if(!remote)return local||{};
   const out=cloneCloud(remote)||{};
+  const tomb=mergeTombs(local.__tombstones,remote.__tombstones);
   for(const key of SYNC_ARRAYS){
-    const lm=Array.isArray(local[key])?local[key]:[];
-    const rm=Array.isArray(remote[key])?remote[key]:[];
+    const dead=tomb[key]||{};
+    const lm=(Array.isArray(local[key])?local[key]:[]).filter(x=>x?.id==null||!dead[String(x.id)]);
+    const rm=(Array.isArray(remote[key])?remote[key]:[]).filter(x=>x?.id==null||!dead[String(x.id)]);
     const map=new Map();
     for(const x of rm)if(x?.id!=null)map.set(String(x.id),x);
     for(const x of lm)if(x?.id!=null){
