@@ -119,6 +119,23 @@ function mergeBusiness(remote,incoming){
   - A stale Akash snapshot can never overwrite Hiren.
   - A stale Hiren snapshot can never overwrite Akash.
 */
+function pruneBogusTombstones(state){
+  // A tombstone is ignored when its record still exists and has no DELETE entry in the audit log.
+  // Real deletes remove the record, so their tombstones are kept.
+  const tomb=state&&state.__tombstones&&typeof state.__tombstones==="object"?state.__tombstones:{};
+  const audit=Array.isArray(state?.audit)?state.audit:[];
+  const dels=new Set(audit.filter(a=>a&&a.action==="DELETE"&&a.recordId!=null).map(a=>String(a.recordId)));
+  for(const arr of Object.keys(tomb)){
+    const list=Array.isArray(state[arr])?state[arr]:[];
+    const live=new Set(list.filter(x=>x&&x.id!=null).map(x=>String(x.id)));
+    for(const id of Object.keys(tomb[arr]||{})){
+      if(live.has(id)&&!dels.has(id))delete tomb[arr][id];
+    }
+  }
+  if(state)state.__tombstones=tomb;
+  return state;
+}
+
 function mergeWorkspace(remote,incoming,business){
   const base=clone(remote||emptyState());
   if(business==="akash"){
@@ -137,6 +154,7 @@ function mergeWorkspace(remote,incoming,business){
   const merged=mergeBusiness(base,incomingHiren);
   merged.settings={...(merged.settings||{}),__businesses:preservedBusinesses};
   merged.currentUser=null;
+  pruneBogusTombstones(merged);
   return merged;
 }
 
