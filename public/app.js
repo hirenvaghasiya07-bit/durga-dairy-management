@@ -44,6 +44,17 @@ function ensureStableRecordIds(state){
       return {...record,id:stableLegacyId(key,record,occurrence),legacyIdAssigned:true};
     });
   }
+  const v2=out.settings?.akashV2;
+  if(v2)for(const key of ['purchases','sales','collections','slabs','vendors','purchaseRates','expenses']){
+    if(!Array.isArray(v2[key]))continue;
+    const seen=new Map();
+    v2[key]=v2[key].map(record=>{
+      if(!record||typeof record!=='object'||record.id!=null)return record;
+      const signature=canonicalRecord(record),occurrence=seen.get(signature)||0;
+      seen.set(signature,occurrence+1);
+      return {...record,id:stableLegacyId('akashV2_'+key,record,occurrence),legacyIdAssigned:true};
+    });
+  }
   return out;
 }
 function tombstoneStamp(v){return typeof v==='string'?v:(v?.deletedAt||v?.deleted_at||v?.at||'')}
