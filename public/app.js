@@ -279,6 +279,7 @@ function save(){
     for(const record of Array.isArray(db[key])?db[key]:[]){
       if(!record||record.id==null)continue;
       const prior=(Array.isArray(previous[key])?previous[key]:[]).find(x=>String(x?.id)===String(record.id));
+      const changedBeforeMetadata=!!prior&&JSON.stringify(record)!==JSON.stringify(prior);
       if(!record.businessId)record.businessId=BUSINESS_ID==='akash'?'akash':'hiren';
       if(!prior){
         if(!record.userId)record.userId=actor;
@@ -286,7 +287,7 @@ function save(){
         if(!record.createdAt)record.createdAt=record.at||nowAt;
         if(!record.updatedAt)record.updatedAt=record.at||nowAt;
         if(key==='expenses'&&!record.paidBy)record.paidBy=user()?.name||'Unknown';
-      }else if(JSON.stringify(record)!==JSON.stringify(prior)){
+      }else if(changedBeforeMetadata){
         if(!record.userId)record.userId=prior.userId||actor;
         if(!record.createdBy)record.createdBy=prior.createdBy||record.userId;
         if(!record.createdAt)record.createdAt=prior.createdAt||prior.at||nowAt;
