@@ -1,8 +1,15 @@
 {
-  "name":"durga-dairy-management",
-  "version":"4.0.0",
-  "private":true,
-  "type":"module",
-  "scripts":{"start":"node server.mjs"},
-  "engines":{"node":">=20"}
+  "name": "durga-dairy-management",
+  "version": "4.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests/sync-invariants.test.mjs",
+    "check:api": "node --check worker.js && node --check cloudflare/live-api-worker.mjs && node --check scripts/deploy-live-assets.mjs",
+    "check:frontend": "node -e 'const fs=require(\"node:fs\"); const vm=require(\"node:vm\"); for (const f of [\"public/app.js\",\"public/akash-v2.js\",\"public/akash-v2-fix.js\",\"public/all-v2.js\",\"public/bootstrap.js\"]) new vm.Script(fs.readFileSync(f,\"utf8\"), { filename: f });'"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }
