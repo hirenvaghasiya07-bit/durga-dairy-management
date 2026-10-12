@@ -169,7 +169,7 @@ function normalizeBusinessRecords(incoming,business,actor){
         const error=new Error("Record "+String(normalized.id)+" belongs to "+existing+" and cannot be synced into "+business+". Local data was preserved.");
         error.code="BUSINESS_OWNERSHIP_MISMATCH";throw error;
       }
-      return {...normalized,businessId:business,userId:normalized.userId||actor};
+      return {...normalized,businessId:business};
     });
   }
   return safe;
