@@ -14,12 +14,19 @@
   const saveA=()=>{save();};
   const moneyA=n=>money(num(n));
   const today=()=>iso();
-  const rateAt=(date)=>{
-    const h=(a().purchaseRates||[]).filter(x=>String(x.date)<=String(date)).sort((x,y)=>String(x.date).localeCompare(String(y.date)));
-    return h.length?num(h[h.length-1].rate):72;
-  };
-  const purchaseTotal=x=>num(x.vendorMorning)+num(x.vendorEvening);const purchaseAmt=x=>purchaseTotal(x)*num(x.rate||effectivePurchaseRate(x.date));
-  const akashQty=x=>num(x.akashMorning)+num(x.akashEvening);
+  const hasSplitMilk=x=>!!(x&&['vendorCowMorning','vendorBuffaloMorning','vendorCowEvening','vendorBuffaloEvening'].some(k=>Object.prototype.hasOwnProperty.call(x,k)));
+  const vq=(x,k)=>num(x&&x[k]);
+  const vendorCowTotal=x=>vq(x,'vendorCowMorning')+vq(x,'vendorCowEvening');
+  const vendorBuffaloTotal=x=>vq(x,'vendorBuffaloMorning')+vq(x,'vendorBuffaloEvening');
+  const hirenCowTotal=x=>vq(x,'hirenCowMorning')+vq(x,'hirenCowEvening');
+  const hirenBuffaloTotal=x=>vq(x,'hirenBuffaloMorning')+vq(x,'hirenBuffaloEvening');
+  const purchaseTotal=x=>hasSplitMilk(x)?vendorCowTotal(x)+vendorBuffaloTotal(x):num(x.vendorMorning)+num(x.vendorEvening);
+  const purchaseAmt=x=>hasSplitMilk(x)?vendorCowTotal(x)*num(x.cowRate)+vendorBuffaloTotal(x)*num(x.buffaloRate):purchaseTotal(x)*num(x.rate||effectivePurchaseRate(x.date));
+  const akashQty=x=>hasSplitMilk(x)?Math.max(0,vq(x,'vendorCowMorning')-vq(x,'hirenCowMorning'))+Math.max(0,vq(x,'vendorBuffaloMorning')-vq(x,'hirenBuffaloMorning'))+Math.max(0,vq(x,'vendorCowEvening')-vq(x,'hirenCowEvening'))+Math.max(0,vq(x,'vendorBuffaloEvening')-vq(x,'hirenBuffaloEvening')):num(x.akashMorning)+num(x.akashEvening);
+  const hirenQty=x=>hasSplitMilk(x)?hirenCowTotal(x)+hirenBuffaloTotal(x):0;
+  const hirenAmt=x=>hasSplitMilk(x)?hirenCowTotal(x)*num(x.cowRate)+hirenBuffaloTotal(x)*num(x.buffaloRate):0;
+  const akashMilkCost=x=>hasSplitMilk(x)?(vendorCowTotal(x)-hirenCowTotal(x))*num(x.cowRate)+(vendorBuffaloTotal(x)-hirenBuffaloTotal(x))*num(x.buffaloRate):akashQty(x)*num(x.rate||effectivePurchaseRate(x.date));
+  const rateAt=(date)=>effectivePurchaseRate(date);
   const saleable=x=>num(x.actualQty)*(1+num(x.extraPercent)/100);
   const rateGroups=ss=>{const m=new Map();ss.forEach(x=>{const id=x.categoryId||('r'+num(x.rate)),name=x.categoryName||x.slabName||('₹'+num(x.rate)+' per litre');if(!m.has(id))m.set(id,{id,name});});return [...m.values()].sort((x,y)=>String(x.name).localeCompare(String(y.name)));};
   const saleAmount=x=>saleable(x)*num(x.rate);
@@ -36,7 +43,14 @@
     ensurePurchaseRates();
     return a().purchaseRates.sort((x,y)=>String(x.date).localeCompare(String(y.date)));
   }
-  function effectivePurchaseRate(date){const h=purchaseRateHistory().filter(x=>String(x.date)<=String(date));return h.length?num(h[h.length-1].rate):72}
+  function effectivePurchaseRate(date){
+    const rows=a().purchases.filter(x=>String(x.date)<=String(date));
+    const qty=sum(rows,akashQty),cost=sum(rows,akashMilkCost);
+    if(qty>0)return cost/qty;
+    const h=purchaseRateHistory().filter(x=>String(x.date)<=String(date));
+    return h.length?num(h[h.length-1].rate):72;
+  }
+
 
   function akashNavItems(){
     return [['dashboard','⌂ Dashboard'],['sales','▣ Daily Sale'],['collections','▤ Bill Collection'],['milk','🥛 Milk Purchase'],['vendors','▤ Vendors'],['expenses','₹ Expense'],['cash','◉ Cash Flow'],['reports','▥ Reports'],['audit','◌ Activity Log']].filter(([k])=>allowed(user()?.role,k)||k==='dashboard'||k==='audit');
@@ -56,12 +70,12 @@
     const sales=sum(ss,saleAmount), actual=sum(ss,x=>x.actualQty), sellable=sum(ss,saleable), profit=sum(ss,saleProfit);
     const collection=sum(cs,x=>x.amount), exp=sum(ex,x=>x.amount), vendorPaid=sum(ps,x=>x.paid);
     const payable=(z.vendors||[]).reduce((s,v)=>s+Math.max(0,num(v.openingBalance)-num(v.openingPaid)),0)+sum(z.purchases,x=>Math.max(0,purchaseAmt(x)-num(x.paid)));const vb={};(z.vendors||[]).forEach(v=>{const o=Math.max(0,num(v.openingBalance)-num(v.openingPaid));if(o)vb[v.name]=o});z.purchases.forEach(x=>{const k=x.vendor||"Main Vendor";vb[k]=(vb[k]||0)+Math.max(0,purchaseAmt(x)-num(x.paid))});const vbText=Object.keys(vb).map(k=>esc(k)+": "+moneyA(vb[k])).join(" • ")||"No pending";
-    const cashIn=sum(ss,x=>x.cashAmount)+sum(cs,x=>x.cashAmount);
+    const cashIn=sum(ss,x=>x.cashAmount)+sum(cs,x=>x.cashAmount)+sum(ps,x=>x.hirenPaid);
     const bankIn=sum(ss,x=>x.bankAmount)+sum(cs,x=>x.bankAmount);
     const cashOut=exp+vendorPaid;
     const cashBalance=cashIn-cashOut, bankBalance=bankIn;
     const margin=sales?profit/sales*100:0;
-    const recent=[...ss.map(x=>({date:x.date,type:'Daily Sale',desc:x.slabName,amount:saleAmount(x)})),...cs.map(x=>({date:x.date,type:'Bill Collection',desc:x.note||'Bulk collection',amount:x.amount})),...ps.map(x=>({date:x.date,type:'Milk Purchase',desc:'Main Vendor',amount:purchaseAmt(x)})),...ex.map(x=>({date:x.date,type:'Expense',desc:x.category||'Expense',amount:-num(x.amount)}))].sort((x,y)=>String(y.date).localeCompare(String(x.date))).slice(0,12);
+    const recent=[...ss.map(x=>({date:x.date,type:'Daily Sale',desc:x.slabName,amount:saleAmount(x)})),...cs.map(x=>({date:x.date,type:'Bill Collection',desc:x.note||'Bulk collection',amount:x.amount})),...ps.map(x=>({date:x.date,type:'Milk Purchase',desc:x.vendor||'Vendor',amount:purchaseAmt(x)})),...ex.map(x=>({date:x.date,type:'Expense',desc:x.category||'Expense',amount:-num(x.amount)}))].sort((x,y)=>String(y.date).localeCompare(String(x.date))).slice(0,12);
     const slabCards=rateGroups(ss).map(s=>{
       const rows=ss.filter(x=>(x.categoryId||('r'+num(x.rate)))===s.id), q=sum(rows,x=>x.actualQty), sq=sum(rows,saleable), rev=sum(rows,saleAmount), pr=sum(rows,saleProfit), pct=rev?pr/rev*100:0;
       return '<div class="card"><h3 style="margin:0 0 8px">'+esc(s.name)+'</h3><div class="small">Actual Milk</div><b>'+q.toFixed(2)+' L</b><div class="small" style="margin-top:7px">Saleable Milk</div><b>'+sq.toFixed(2)+' L</b><div class="small" style="margin-top:7px">Sales</div><b>'+moneyA(rev)+'</b><div class="small" style="margin-top:7px">Profit</div><b class="'+(pr>=0?'kpiGood':'kpiBad')+'">'+moneyA(pr)+' • '+pct.toFixed(2)+'%</b></div>';
@@ -77,27 +91,87 @@
     akashShell('dashboard',body,'Akash Dashboard');
   }
 
-  function akashPurchaseModal(item){
-    item=item||{id:uid(),date:today(),vendorMorning:0,vendorEvening:0,akashMorning:0,akashEvening:0,paid:0,vendorId:'',vendor:''};
-    const edit=!!item._edit,rate=effectivePurchaseRate(item.date),vendors=a().vendors.filter(v=>v.active!==false).sort((x,y)=>String(x.name).localeCompare(String(y.name)));
-    const vendorOptions='<option value="">Select Vendor</option>'+vendors.map(v=>'<option value="'+esc(v.id)+'" '+(v.id===(item.vendorId||(v.name===item.vendor?v.id:''))?'selected':'')+'>'+esc(v.name)+'</option>').join('')+((item.vendor&&!vendors.some(v=>v.id===item.vendorId)&&!vendors.some(v=>v.name===item.vendor))?'<option value="legacy" selected>'+esc(item.vendor)+'</option>':'');
-    modal((edit?'Edit':'Add')+' Milk Purchase','<div class="notice">Select the vendor first, then enter total milk received morning/evening and cow milk quantities for morning/evening.</div><div class="formgrid" style="margin-top:12px"><div class="field"><label>Date</label><input id="apDate" type="date" value="'+item.date+'"></div><div class="field"><label>Vendor</label><select id="apVendor">'+vendorOptions+'</select><div class="muted"><button type="button" class="linkbtn" onclick="render(&quot;vendors&quot;)">+ Add Vendor</button></div></div><div class="field"><label>Purchase Rate ₹/L</label><input id="apRate" type="number" step="0.01" value="'+rate+'"></div><div class="field"><label>Milk Morning (L)</label><input id="apVM" type="number" min="0" step="0.01" value="'+num(item.vendorMorning)+'"></div><div class="field"><label>Milk Evening (L)</label><input id="apVE" type="number" min="0" step="0.01" value="'+num(item.vendorEvening)+'"></div><div class="field"><label>Cow Morning (L)</label><input id="apAM" type="number" min="0" step="0.01" value="'+num(item.akashMorning)+'"></div><div class="field"><label>Cow Evening (L)</label><input id="apAE" type="number" min="0" step="0.01" value="'+num(item.akashEvening)+'"></div><div class="field"><label>Paid ₹</label><input id="apPaid" type="number" min="0" step="0.01" value="'+num(item.paid)+'"></div><div class="field"><label>Note</label><input id="apNote" value="'+esc(item.note||'')+'"></div></div><div class="notice" style="margin-top:12px">Milk Total: <b id="apTotal">0</b> L • Cow Milk: <b id="apAkash">0</b> L • Total ₹: <b id="apAmount">₹0</b> • Balance: <b id="apBal">₹0</b></div>',()=>{
-      const next={...item};next.date=val('apDate');const vid=val('apVendor'),vendor=a().vendors.find(v=>v.id===vid);if(!vendor&&vid!=='legacy')return alert('Select a vendor.');if(vid==='legacy'){next.vendorId=item.vendorId||'';next.vendor=item.vendor||'';}else{next.vendorId=vendor.id;next.vendor=vendor.name;}
-      next.rate=num(val('apRate'))||effectivePurchaseRate(next.date);next.vendorMorning=num(val('apVM'));next.vendorEvening=num(val('apVE'));next.akashMorning=num(val('apAM'));next.akashEvening=num(val('apAE'));next.paid=num(val('apPaid'));next.note=val('apNote');if([next.vendorMorning,next.vendorEvening,next.akashMorning,next.akashEvening,next.paid].some(x=>x<0))return alert('Quantities and payment cannot be negative.');if(next.akashMorning>next.vendorMorning||next.akashEvening>next.vendorEvening)return alert('Cow quantity cannot exceed total milk received in the same session.');next.total=purchaseTotal(next)*next.rate;next.akashQty=akashQty(next);next.akashAmount=next.akashQty*next.rate;if(next.paid>next.total)return alert('Paid amount cannot exceed purchase total.');delete next._edit;
-      if(edit){const i=a().purchases.findIndex(x=>x.id===next.id);if(i>=0)a().purchases[i]=next}else a().purchases.push(next);
-      audit(edit?'UPDATE':'CREATE','akashPurchase',next.id,null,next);saveA();closeModal();render('milk');
+  function akashLegacyPurchaseModal(item){
+    const vendors=a().vendors.filter(v=>v.active!==false).sort((x,y)=>String(x.name).localeCompare(String(y.name)));
+    const vendorOptions='<option value="">Select Vendor</option>'+vendors.map(v=>'<option value="'+esc(v.id)+'" '+(v.id===(item.vendorId||(v.name===item.vendor?v.id:''))?'selected':'')+'>'+esc(v.name)+'</option>').join('');
+    modal('Edit Legacy Milk Purchase','<div class="notice">This is an older purchase record. Its original fields are preserved while you edit it. New entries use Cow/Buffalo, Hiren deduction and vendor-specific prices.</div><div class="formgrid"><div class="field"><label>Date</label><input id="alDate" type="date" value="'+item.date+'"></div><div class="field"><label>Vendor</label><select id="alVendor">'+vendorOptions+'</select></div><div class="field"><label>Legacy Rate ₹/L</label><input id="alRate" type="number" step=".01" value="'+num(item.rate||effectivePurchaseRate(item.date))+'"></div><div class="field"><label>Total Milk Morning (L)</label><input id="alVM" type="number" min="0" step=".01" value="'+num(item.vendorMorning)+'"></div><div class="field"><label>Total Milk Evening (L)</label><input id="alVE" type="number" min="0" step=".01" value="'+num(item.vendorEvening)+'"></div><div class="field"><label>Akash Milk Morning (L)</label><input id="alAM" type="number" min="0" step=".01" value="'+num(item.akashMorning)+'"></div><div class="field"><label>Akash Milk Evening (L)</label><input id="alAE" type="number" min="0" step=".01" value="'+num(item.akashEvening)+'"></div><div class="field"><label>Paid to Vendor ₹</label><input id="alPaid" type="number" min="0" step=".01" value="'+num(item.paid)+'"></div><div class="field"><label>Note</label><input id="alNote" value="'+esc(item.note||'')+'"></div></div>',()=>{
+      const before=JSON.parse(JSON.stringify(item)),d=val('alDate'),vid=val('alVendor'),v=a().vendors.find(x=>x.id===vid);if(!d||!v)return alert('Select date and vendor.');
+      const next={...item,date:d,vendorId:v.id,vendor:v.name,rate:num(val('alRate')),vendorMorning:num(val('alVM')),vendorEvening:num(val('alVE')),akashMorning:num(val('alAM')),akashEvening:num(val('alAE')),paid:num(val('alPaid')),note:val('alNote')};
+      if([next.rate,next.vendorMorning,next.vendorEvening,next.akashMorning,next.akashEvening,next.paid].some(x=>x<0))return alert('Values cannot be negative.');
+      if(next.akashMorning>next.vendorMorning||next.akashEvening>next.vendorEvening)return alert('Akash quantity cannot exceed total milk for the same session.');
+      if(next.paid>purchaseAmt(next))return alert('Paid amount cannot exceed purchase total.');
+      const i=a().purchases.findIndex(x=>x.id===next.id);if(i>=0)a().purchases[i]=next;audit('UPDATE','akashPurchase',next.id,before,next);saveA();closeModal();render('milk');
     });
-    setTimeout(()=>{['apDate','apVM','apVE','apAM','apAE','apPaid','apRate'].forEach(id=>document.getElementById(id)?.addEventListener('input',()=>{const d=val('apDate'),r=num(val('apRate'))||effectivePurchaseRate(d),t=num(val('apVM'))+num(val('apVE')),q=num(val('apAM'))+num(val('apAE'));document.getElementById('apTotal').textContent=t.toFixed(2);document.getElementById('apAkash').textContent=q.toFixed(2);document.getElementById('apAmount').textContent=moneyA(t*r);document.getElementById('apBal').textContent=moneyA(t*r-num(val('apPaid')))}));},50);
+  }
+  function akashPurchaseModal(item){
+    const edit=!!(item&&item._edit);
+    if(edit&& !hasSplitMilk(item))return akashLegacyPurchaseModal(item);
+    item=item||{id:uid(),date:today(),vendorCowMorning:0,vendorBuffaloMorning:0,vendorCowEvening:0,vendorBuffaloEvening:0,hirenCowMorning:0,hirenBuffaloMorning:0,hirenCowEvening:0,hirenBuffaloEvening:0,cowRate:0,buffaloRate:0,paid:0,hirenPaid:0,vendorId:'',vendor:''};
+    const vendors=a().vendors.filter(v=>v.active!==false).sort((x,y)=>String(x.name).localeCompare(String(y.name)));
+    const vendorOptions='<option value="">Select Vendor</option>'+vendors.map(v=>'<option value="'+esc(v.id)+'" '+(v.id===item.vendorId?'selected':'')+'>'+esc(v.name)+'</option>').join('');
+    const qfield=(label,id,value)=>'<div class="field"><label>'+label+' (L)</label><input id="'+id+'" type="number" min="0" step="0.01" value="'+num(value)+'"></div>';
+    const readfield=(label,id)=>'<div class="field"><label>'+label+' (L)</label><input id="'+id+'" type="number" readonly value="0"></div>';
+    const body='<div class="field"><label>Date • Day / Month / Year</label><div class="formgrid" style="grid-template-columns:repeat(3,minmax(0,1fr));gap:7px">'+akashDateSelects('apDate',item.date||today())+'</div></div><div class="field"><label>Vendor</label><select id="apVendor">'+vendorOptions+'</select><div class="muted"><button type="button" class="linkbtn" onclick="closeModal();render(&quot;vendors&quot;)">+ Add / Edit Vendor Rates</button></div></div>'+
+      '<div class="card section"><h3>Actual Milk Received from Vendor</h3><div class="formgrid">'+qfield('Morning • Cow','apVCM',item.vendorCowMorning)+qfield('Morning • Buffalo','apVBM',item.vendorBuffaloMorning)+qfield('Evening • Cow','apVCE',item.vendorCowEvening)+qfield('Evening • Buffalo','apVBE',item.vendorBuffaloEvening)+'</div></div>'+
+      '<div class="card section"><h3>Milk Given to Hiren • Deduct from Akash Actual</h3><div class="formgrid">'+qfield('Morning • Cow','apHCM',item.hirenCowMorning)+qfield('Morning • Buffalo','apHBM',item.hirenBuffaloMorning)+qfield('Evening • Cow','apHCE',item.hirenCowEvening)+qfield('Evening • Buffalo','apHBE',item.hirenBuffaloEvening)+'</div></div>'+
+      '<div class="card section"><h3>Akash Actual • Automatically Calculated</h3><div class="formgrid">'+readfield('Morning • Cow','apACM')+readfield('Morning • Buffalo','apABM')+readfield('Evening • Cow','apACE')+readfield('Evening • Buffalo','apABE')+'</div></div>'+
+      '<div class="card section"><h3>Vendor Prices • Auto-filled from selected Vendor</h3><div class="formgrid"><div class="field"><label>Cow Rate ₹/L</label><input id="apCowRate" type="number" min="0" step="0.01" value="'+num(item.cowRate)+'"></div><div class="field"><label>Buffalo Rate ₹/L</label><input id="apBuffaloRate" type="number" min="0" step="0.01" value="'+num(item.buffaloRate)+'"></div></div><div class="muted">To change the long-term price, open Vendors and set an effective date. These fields can be adjusted for this entry only.</div></div>'+
+      '<div class="card section"><h3>Payments</h3><div class="formgrid"><div class="field"><label>Paid to Vendor ₹</label><input id="apPaid" type="number" min="0" step="0.01" value="'+num(item.paid)+'"></div><div class="field"><label>Received from Hiren ₹</label><input id="apHirenPaid" type="number" min="0" step="0.01" value="'+num(item.hirenPaid)+'"></div><div class="field span2"><label>Note</label><input id="apNote" value="'+esc(item.note||'')+'"></div></div></div>'+
+      '<div class="notice" style="margin-top:12px">Vendor milk: <b id="apTotal">0 L</b> • Vendor amount: <b id="apAmount">₹0</b> • Hiren milk amount: <b id="apHirenAmount">₹0</b> • Akash actual milk cost: <b id="apAkashCost">₹0</b><br>Vendor balance: <b id="apBal">₹0</b> • Hiren balance due to Akash: <b id="apHirenBal">₹0</b></div>';
+    modal((edit?'Edit':'Add')+' Milk Purchase',body,()=>{
+      const before=edit?JSON.parse(JSON.stringify(a().purchases.find(x=>x.id===item.id)||item)):null,d=akashReadDate('apDate'),vid=val('apVendor'),vendor=a().vendors.find(v=>v.id===vid);if(!d)return alert('Select a valid date.');if(!vendor)return alert('Select a vendor.');
+      const next={...item,date:d,vendorId:vendor.id,vendor:vendor.name,
+        vendorCowMorning:num(val('apVCM')),vendorBuffaloMorning:num(val('apVBM')),vendorCowEvening:num(val('apVCE')),vendorBuffaloEvening:num(val('apVBE')),
+        hirenCowMorning:num(val('apHCM')),hirenBuffaloMorning:num(val('apHBM')),hirenCowEvening:num(val('apHCE')),hirenBuffaloEvening:num(val('apHBE')),
+        cowRate:num(val('apCowRate')),buffaloRate:num(val('apBuffaloRate')),paid:num(val('apPaid')),hirenPaid:num(val('apHirenPaid')),note:val('apNote')};
+      const nums=['vendorCowMorning','vendorBuffaloMorning','vendorCowEvening','vendorBuffaloEvening','hirenCowMorning','hirenBuffaloMorning','hirenCowEvening','hirenBuffaloEvening','cowRate','buffaloRate','paid','hirenPaid'];if(nums.some(k=>num(next[k])<0))return alert('Quantities, rates and payments cannot be negative.');
+      if(next.hirenCowMorning>next.vendorCowMorning||next.hirenBuffaloMorning>next.vendorBuffaloMorning||next.hirenCowEvening>next.vendorCowEvening||next.hirenBuffaloEvening>next.vendorBuffaloEvening)return alert('Milk given to Hiren cannot exceed vendor milk for the same type and session.');
+      next.vendorMorning=next.vendorCowMorning+next.vendorBuffaloMorning;next.vendorEvening=next.vendorCowEvening+next.vendorBuffaloEvening;
+      next.akashMorning=(next.vendorCowMorning-next.hirenCowMorning)+(next.vendorBuffaloMorning-next.hirenBuffaloMorning);next.akashEvening=(next.vendorCowEvening-next.hirenCowEvening)+(next.vendorBuffaloEvening-next.hirenBuffaloEvening);
+      next.rate=purchaseTotal(next)?purchaseAmt(next)/purchaseTotal(next):0;next.total=purchaseAmt(next);next.akashQty=akashQty(next);next.akashAmount=akashMilkCost(next);next.hirenAmount=hirenAmt(next);
+      if(next.paid>next.total+0.001)return alert('Paid to Vendor cannot exceed vendor amount.');
+      if(next.hirenPaid>next.hirenAmount+0.001)return alert('Received from Hiren cannot exceed the amount for milk given to Hiren.');
+      delete next._edit;
+      const idx=a().purchases.findIndex(x=>x.id===next.id);if(idx>=0)a().purchases[idx]=next;else a().purchases.push(next);
+      audit(edit?'UPDATE':'CREATE','akashPurchase',next.id,before,next);saveA();closeModal();render('milk');
+    });
+    function recalc(resetRates){const d=akashReadDate('apDate')||today(),v=a().vendors.find(x=>x.id===val('apVendor'));if(resetRates&&v){document.getElementById('apCowRate').value=vendorRate(v,d,'cow');document.getElementById('apBuffaloRate').value=vendorRate(v,d,'buffalo');}
+      const vcM=num(val('apVCM')),vbM=num(val('apVBM')),vcE=num(val('apVCE')),vbE=num(val('apVBE')),hcM=num(val('apHCM')),hbM=num(val('apHBM')),hcE=num(val('apHCE')),hbE=num(val('apHBE')),cr=num(val('apCowRate')),br=num(val('apBuffaloRate'));
+      [['apACM',vcM-hcM],['apABM',vbM-hbM],['apACE',vcE-hcE],['apABE',vbE-hbE]].forEach(([id,n])=>{const e=document.getElementById(id);if(e)e.value=Math.max(0,n).toFixed(2);});
+      const vqty=vcM+vbM+vcE+vbE,hqty=hcM+hbM+hcE+hbE,va=(vcM+vcE)*cr+(vbM+vbE)*br,ha=(hcM+hcE)*cr+(hbM+hbE)*br,ac=va-ha,paid=num(val('apPaid')),hp=num(val('apHirenPaid'));
+      const set=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t;};set('apTotal',vqty.toFixed(2)+' L');set('apAmount',moneyA(va));set('apHirenAmount',moneyA(ha));set('apAkashCost',moneyA(ac));set('apBal',moneyA(va-paid));set('apHirenBal',moneyA(ha-hp));
+    }
+    ['apDateD','apDateM','apDateY'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>recalc(true)));
+    document.getElementById('apVendor')?.addEventListener('change',()=>recalc(true));
+    ['apVCM','apVBM','apVCE','apVBE','apHCM','apHBM','apHCE','apHBE','apCowRate','apBuffaloRate','apPaid','apHirenPaid'].forEach(id=>document.getElementById(id)?.addEventListener('input',()=>recalc(false)));
+    recalc(false);
   }
 
-
+  function vendorRateHistory(v,type){
+    const key=type==='cow'?'cowRateHistory':'buffaloRateHistory',legacy=type==='cow'?v.cowRate:v.buffaloRate;
+    if(!Array.isArray(v[key]))v[key]=[{date:'2000-01-01',rate:num(legacy)}];
+    return v[key].sort((x,y)=>String(x.date).localeCompare(String(y.date)));
+  }
+  function vendorRate(v,date,type){
+    if(!v)return 0;const h=vendorRateHistory(v,type).filter(x=>String(x.date)<=String(date)).sort((x,y)=>String(x.date).localeCompare(String(y.date)));
+    return h.length?num(h[h.length-1].rate):0;
+  }
+  function setVendorRate(v,type,date,value){
+    const key=type==='cow'?'cowRateHistory':'buffaloRateHistory',h=vendorRateHistory(v,type),i=h.findIndex(x=>String(x.date)===String(date)),entry={date:date,rate:num(value)};
+    if(i>=0)h[i]=entry;else h.push(entry);h.sort((x,y)=>String(x.date).localeCompare(String(y.date)));v[key]=h;
+  }
   function akashVendorModal(id){
-    const z=a(),old=id?z.vendors.find(v=>v.id===id):null,v=old||{id:uid(),name:'',phone:'',active:true};
-    modal((old?'Edit':'Add')+' Vendor','<div class="formgrid"><div class="field span2"><label>Vendor Name</label><input id="avName" value="'+esc(v.name)+'" placeholder="Vendor name"></div><div class="field"><label>Phone</label><input id="avPhone" value="'+esc(v.phone||'')+'" placeholder="Optional"></div></div>',()=>{
-      const name=val('avName').trim(),phone=val('avPhone').trim();if(!name)return alert('Enter vendor name.');
+    const z=a(),old=id?z.vendors.find(v=>v.id===id):null,v=old||{id:uid(),name:'',phone:'',active:true,cowRateHistory:[],buffaloRateHistory:[]},date=today();
+    const cow=old?vendorRate(v,date,'cow'):num(v.cowRate),buff=old?vendorRate(v,date,'buffalo'):num(v.buffaloRate);
+    modal((old?'Edit':'Add')+' Vendor & Milk Prices','<div class="formgrid"><div class="field span2"><label>Vendor Name</label><input id="avName" value="'+esc(v.name)+'" placeholder="Vendor name"></div><div class="field"><label>Phone</label><input id="avPhone" value="'+esc(v.phone||'')+'" placeholder="Optional"></div></div><div class="card section"><h3>Vendor Milk Rates</h3><div class="field"><label>Rate Applicable From • Day / Month / Year</label><div class="formgrid" style="grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">'+akashDateSelects('avDate',date)+'</div></div><div class="formgrid"><div class="field"><label>Cow Milk Rate ₹/L</label><input id="avCowRate" type="number" min="0" step="0.01" value="'+cow+'"></div><div class="field"><label>Buffalo Milk Rate ₹/L</label><input id="avBuffRate" type="number" min="0" step="0.01" value="'+buff+'"></div></div><div class="notice">Choose the effective date when changing prices. Purchase entries before that date retain the old rate; entries from that date onward use the new rate.</div></div>',()=>{
+      const name=val('avName').trim(),phone=val('avPhone').trim(),d=akashReadDate('avDate'),cr=num(val('avCowRate')),br=num(val('avBuffRate'));if(!name)return alert('Enter vendor name.');if(!d)return alert('Select a valid effective date.');if(cr<0||br<0)return alert('Rates cannot be negative.');
       if(z.vendors.some(x=>x.id!==v.id&&String(x.name).trim().toLowerCase()===name.toLowerCase()))return alert('Vendor already exists.');
       const before=old?JSON.parse(JSON.stringify(old)):null;v.name=name;v.phone=phone;v.active=v.active!==false;
+      const oldCow=vendorRate(v,d,'cow'),oldBuff=vendorRate(v,d,'buffalo'),cowChanged=!old||cr!==oldCow,buffChanged=!old||br!==oldBuff;
+      if(cowChanged)setVendorRate(v,'cow',d,cr);else vendorRateHistory(v,'cow');
+      if(buffChanged)setVendorRate(v,'buffalo',d,br);else vendorRateHistory(v,'buffalo');
       if(old){const i=z.vendors.findIndex(x=>x.id===v.id);if(i>=0)z.vendors[i]=v;}else z.vendors.push(v);
+      if(cowChanged||buffChanged){z.purchases.forEach(p=>{if(p.vendorId!==v.id||String(p.date)<String(d)||!hasSplitMilk(p))return;const prev=JSON.parse(JSON.stringify(p));if(cowChanged)p.cowRate=vendorRate(v,p.date,'cow');if(buffChanged)p.buffaloRate=vendorRate(v,p.date,'buffalo');p.rate=purchaseTotal(p)?purchaseAmt(p)/purchaseTotal(p):0;p.total=purchaseAmt(p);p.akashAmount=akashMilkCost(p);p.hirenAmount=hirenAmt(p);audit('UPDATE','akashPurchase',p.id,prev,p);});}
       audit(old?'UPDATE':'CREATE','Akash Vendor',v.id,before,v);saveA();closeModal();render('vendors');
     });
   }
@@ -111,11 +185,11 @@
   window.toggleAkashVendor=function(id){const v=a().vendors.find(x=>x.id===id);if(!v)return;const before=JSON.parse(JSON.stringify(v));v.active=v.active===false; audit('UPDATE','Akash Vendor',v.id,before,v);saveA();render('vendors');};
 
   function renderAkashMilk(){
-    const z=a(), rows=[...z.purchases].sort((x,y)=>String(y.date).localeCompare(String(x.date)));
-    const total=sum(rows,purchaseTotal), own=sum(rows,akashQty), paid=sum(rows,x=>x.paid), due=sum(rows,x=>Math.max(0,purchaseAmt(x)-num(x.paid)))+(z.vendors||[]).reduce((s,v)=>s+Math.max(0,num(v.openingBalance)-num(v.openingPaid)),0);
+    const z=a(),rows=[...z.purchases].sort((x,y)=>String(y.date).localeCompare(String(x.date)));
+    const total=sum(rows,purchaseTotal),own=sum(rows,akashQty),paid=sum(rows,x=>x.paid),due=sum(rows,x=>Math.max(0,purchaseAmt(x)-num(x.paid)))+(z.vendors||[]).reduce((t,v)=>t+Math.max(0,num(v.openingBalance)-num(v.openingPaid)),0),hirenDue=sum(rows,x=>Math.max(0,hirenAmt(x)-num(x.hirenPaid))),hirenPaid=sum(rows,x=>x.hirenPaid);
     const rateRows=purchaseRateHistory();
-    const body='<div class="sectionhead"><div><h1>Milk Purchase</h1><div class="muted">Main Vendor purchase • Morning/Evening • Akash allocation</div></div><div class="toolbar"><button class="btn green" onclick="akashPurchaseModal()">+ Add Purchase</button><button class="btn gray" onclick="akashRateModal()">Purchase Rate History</button></div></div><div class="grid">'+metric('Main Vendor Purchase',total.toFixed(2)+' L')+metric('Akash Purchase',own.toFixed(2)+' L')+metric('Paid',moneyA(paid))+metric('Total Balance to Pay',moneyA(due),'Vendor payable')+'</div><div class="card section">'+tableRows(rows.map(x=>({...x,id:x.id,_entity:'akashPurchase'})),[['Date',x=>fmtDate(x.date)],['Vendor',x=>esc(x.vendor||'Main Vendor')],['Milk Morning',x=>num(x.vendorMorning).toFixed(2)+' L'],['Milk Evening',x=>num(x.vendorEvening).toFixed(2)+' L'],['Total Milk',x=>purchaseTotal(x).toFixed(2)+' L'],['Cow Morning',x=>num(x.akashMorning).toFixed(2)+' L'],['Cow Evening',x=>num(x.akashEvening).toFixed(2)+' L'],['Cow Total',x=>akashQty(x).toFixed(2)+' L'],['Rate',x=>moneyA(x.rate||effectivePurchaseRate(x.date))],['Amount',x=>moneyA(purchaseTotal(x)*(x.rate||effectivePurchaseRate(x.date)))],['Paid',x=>moneyA(x.paid)],['Balance',x=>moneyA(Math.max(0,purchaseTotal(x)*(x.rate||effectivePurchaseRate(x.date))-num(x.paid)))],['Actions',x=>'<button class="btn sm gray" onclick="akashEditPurchase(\''+x.id+'\')">Edit</button> <button class="btn sm red" onclick="akashDeletePurchase(\''+x.id+'\')">Delete</button>']],false)+'</div><div class="card section"><h2>Rate History</h2>'+tableRows(rateRows.map(x=>({...x,id:x.id,_entity:'akashRate'})),[['Effective Date',x=>fmtDate(x.date)],['Rate',x=>moneyA(x.rate)],['Action',x=>'<button class="btn sm gray" onclick="akashRateModal(\''+x.id+'\')">Edit</button>']],false)+'</div>';
-    akashShell('milk',body,'Bill Purchase');
+    const body='<div class="sectionhead"><div><h1>Milk Purchase</h1><div class="muted">Vendor actual milk • Hiren deduction • Akash net actual • separate payments</div></div><div class="toolbar"><button class="btn green" onclick="akashPurchaseModal()">+ Add Milk Purchase</button><button class="btn gray" onclick="akashRateModal()">Legacy Rate History</button></div></div><div class="grid">'+metric('Actual Vendor Milk',total.toFixed(2)+' L')+metric('Akash Actual Milk',own.toFixed(2)+' L')+metric('Paid to Vendors',moneyA(paid))+metric('Vendor Balance',moneyA(due))+metric('Hiren Balance Due to Akash',moneyA(hirenDue))+metric('Received from Hiren',moneyA(hirenPaid))+'</div><div class="card section">'+tableRows(rows.map(x=>({...x,id:x.id,_entity:'akashPurchase'})),[['Date',x=>fmtDate(x.date)],['Vendor',x=>esc(x.vendor||'Vendor')],['Actual Cow M/E',x=>hasSplitMilk(x)?num(x.vendorCowMorning).toFixed(2)+' / '+num(x.vendorCowEvening).toFixed(2)+' L':num(x.akashMorning).toFixed(2)+' / '+num(x.akashEvening).toFixed(2)+' L'],['Actual Buffalo M/E',x=>hasSplitMilk(x)?num(x.vendorBuffaloMorning).toFixed(2)+' / '+num(x.vendorBuffaloEvening).toFixed(2)+' L':'Legacy'],['Vendor Total Milk',x=>purchaseTotal(x).toFixed(2)+' L'],['Hiren Cow M/E',x=>hasSplitMilk(x)?num(x.hirenCowMorning).toFixed(2)+' / '+num(x.hirenCowEvening).toFixed(2)+' L':'—'],['Hiren Buffalo M/E',x=>hasSplitMilk(x)?num(x.hirenBuffaloMorning).toFixed(2)+' / '+num(x.hirenBuffaloEvening).toFixed(2)+' L':'—'],['Akash Actual',x=>akashQty(x).toFixed(2)+' L'],['Cow / Buffalo Rate',x=>hasSplitMilk(x)?moneyA(x.cowRate)+' / '+moneyA(x.buffaloRate):moneyA(x.rate||effectivePurchaseRate(x.date))],['Vendor Amount',x=>moneyA(purchaseAmt(x))],['Paid Vendor',x=>moneyA(x.paid)],['Vendor Due',x=>moneyA(Math.max(0,purchaseAmt(x)-num(x.paid)))],['Hiren Amount',x=>moneyA(hirenAmt(x))],['Hiren Paid',x=>moneyA(x.hirenPaid)],['Hiren Due',x=>moneyA(Math.max(0,hirenAmt(x)-num(x.hirenPaid)))],['Actions',x=>'<button class="btn sm gray" data-id="'+x.id+'" onclick="akashEditPurchase(this.dataset.id)">Edit</button> <button class="btn sm red" data-id="'+x.id+'" onclick="akashDeletePurchase(this.dataset.id)">Delete</button>']],false)+'</div><div class="card section"><h2>Legacy Purchase Rate History</h2><div class="muted">New purchases use each vendor’s Cow and Buffalo rate history. This older rate list is only a fallback for older records.</div>'+tableRows(rateRows.map(x=>({...x,id:x.id,_entity:'akashRate'})),[['Effective Date',x=>fmtDate(x.date)],['Rate',x=>moneyA(x.rate)],['Action',x=>'<button class="btn sm gray" onclick="akashRateModal(\''+x.id+'\')">Edit</button>']],false)+'</div>';
+    akashShell('milk',body,'Milk Purchase');
   }
 
   function akashRateModal(id){
