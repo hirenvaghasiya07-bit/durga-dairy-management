@@ -357,17 +357,23 @@ function addMilk(){
     const vendors=(db.vendors||[]).filter(v=>v.active!==false).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
     modal('Akash • Milk Purchase',`<div class="formgrid">
       <div class="field"><label>Date</label><input id="date" type="date" value="${iso()}"></div>
-      <div class="field"><label>Vendor</label><select id="vendor">${vendors.map(v=>'<option value="'+esc(v.name)+'">'+esc(v.name)+'</option>').join('')}</select></div>
-      <div class="field"><label>Purchase Milk (L)</label><input id="milkLitres" type="number" step="0.01"></div>
-      <div class="field"><label>Purchase Rate ₹/L</label><input id="purchaseRate" type="number" step="0.01"></div>
-      <div class="field"><label>Paid Now ₹</label><input id="paid" type="number" value="0"></div>
-      <div class="field span4"><div class="notice">Purchaseમાં ફક્ત actual Milk purchase રહેશે. Vendor Masterમાંથી Vendor automatic select થશે.</div></div>
+      <div class="field"><label>Main Vendor</label><select id="vendor">${vendors.map(v=>'<option value="'+esc(v.name)+'">'+esc(v.name)+'</option>').join('')}</select></div>
+      <div class="field"><label>Main Vendor Morning (L)</label><input id="mainMorning" type="number" min="0" step="0.01" value="0"></div>
+      <div class="field"><label>Main Vendor Evening (L)</label><input id="mainEvening" type="number" min="0" step="0.01" value="0"></div>
+      <div class="field"><label>Akash Morning (L)</label><input id="akashMorning" type="number" min="0" step="0.01" value="0"></div>
+      <div class="field"><label>Akash Evening (L)</label><input id="akashEvening" type="number" min="0" step="0.01" value="0"></div>
+      <div class="field"><label>Purchase Rate ₹/L</label><input id="purchaseRate" type="number" min="0" step="0.01"></div>
+      <div class="field"><label>Paid Now ₹</label><input id="paid" type="number" min="0" step="0.01" value="0"></div>
+      <div class="field span4"><label>Note</label><input id="milkNote" placeholder="Vendor purchase / morning-evening split"></div>
+      <div class="field span4"><div class="notice">The vendor purchase cost is calculated from Main Vendor Morning + Evening quantities. Akash Morning/Evening quantities are stored separately for reconciliation and do not create a second purchase.</div></div>
     </div>`,()=>{
-      const milkLitres=num(val('milkLitres')), purchaseRate=num(val('purchaseRate')), paid=num(val('paid'));
-      if(!vendors.length)return alert('પહેલા Vendor Masterમાં Vendor add કરો.');
-      if(!milkLitres||!purchaseRate)return alert('Enter milk litres and purchase rate.');
-      const total=milkLitres*purchaseRate,balance=total-paid;
-      const r={id:uid(),date:val('date'),vendor:val('vendor'),cowLitres:milkLitres,cowRate:purchaseRate,buffLitres:0,buffRate:0,total,paid,balance,milkLitres,purchaseRate,waterPct:0,saleableLitres:milkLitres};
+      if(!vendors.length)return alert('Add a vendor in Vendor Master first.');
+      const mainMorning=num(val('mainMorning')),mainEvening=num(val('mainEvening')),akashMorning=num(val('akashMorning')),akashEvening=num(val('akashEvening')),purchaseRate=num(val('purchaseRate')),paid=num(val('paid'));
+      const mainTotal=mainMorning+mainEvening,akashTotal=akashMorning+akashEvening;
+      if(mainTotal<=0||purchaseRate<=0)return alert('Enter positive main vendor quantity and purchase rate.');
+      if([mainMorning,mainEvening,akashMorning,akashEvening,paid].some(x=>x<0))return alert('Quantities and payment cannot be negative.');
+      const total=mainTotal*purchaseRate;if(paid>total)return alert('Paid amount cannot exceed purchase total.');
+      const nowAt=new Date().toISOString(),r={id:uid(),date:val('date')||iso(),vendor:val('vendor'),mainVendorMorning:mainMorning,mainVendorEvening:mainEvening,akashMorning,akashEvening,mainVendorTotal:mainTotal,akashRecordedTotal:akashTotal,milkLitres:mainTotal,cowLitres:mainTotal,cowRate:purchaseRate,buffLitres:0,buffRate:0,purchaseRate,total,paid,balance:total-paid,note:val('milkNote'),businessId:'akash',userId:user()?.id||'',createdAt:nowAt,updatedAt:nowAt};
       db.milk.push(r);audit('CREATE','Milk Purchase',r.id,null,r);save();closeModal();render('milk');
     });
     return;
@@ -488,7 +494,7 @@ function akashMilkProfitReportHTML(mode='all',value=''){
   const sales=(db.customerSales||[]).filter(x=>filterDate(x.date,mode,value)&&x.productKey==='milk');
   const totalPurchaseLitres=buys.reduce((a,x)=>a+num(x.milkLitres||x.cowLitres)+num(x.buffLitres),0);
   const totalPurchaseCost=buys.reduce((a,x)=>a+num(x.total),0);
-  const saleableLitres=buys.reduce((a,x)=>a+num(x.saleableLitres||((num(x.milkLitres||x.cowLitres)+num(x.buffLitres))*(1+num(x.waterPct)/100))),0);
+  const saleableLitres=totalPurchaseLitres;
   const avgCost=saleableLitres?totalPurchaseCost/saleableLitres:0;
   const slabMap=new Map(akashMilkSlabs().map(x=>[x.id,x]));
   const groups={};
