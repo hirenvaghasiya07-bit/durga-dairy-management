@@ -138,38 +138,57 @@ function mergeArrayById(remote,incoming,tombstones={},entity=""){
   const dead=tombstones?.[entity]||{};
   return Array.from(map.values()).filter(x=>!Object.prototype.hasOwnProperty.call(dead,String(x.id)));
 }
+function canonicalRecord(value){
+  if(Array.isArray(value))return "["+value.map(canonicalRecord).join(",")+"]";
+  if(value&&typeof value==="object")return "{"+Object.keys(value).sort().map(k=>JSON.stringify(k)+":"+canonicalRecord(value[k])).join(",")+"}";
+  return JSON.stringify(value);
+}
+function stableLegacyId(entity,record,occurrence=0){
+  const raw=canonicalRecord(record);let hash=2166136261;
+  for(let i=0;i<raw.length;i++){hash^=raw.charCodeAt(i);hash=Math.imul(hash,16777619)}
+  return "legacy_"+entity+"_"+(hash>>>0).toString(36)+"_"+occurrence;
+}
 function normalizeBusinessRecords(incoming,business,actor){
   const safe=clone(incoming||emptyState());
   for(const key of ARRAY_KEYS){
     if(!Array.isArray(safe[key]))continue;
     if(business==="akash"&&["internalTransfers","customerOpeningBalances"].includes(key))continue;
     if(business==="hiren"&&key==="milkPriceVarieties")continue;
+    const seen=new Map();
     safe[key]=safe[key].map(record=>{
-      if(!record||record.id==null)return record;
-      const existing=String(record.businessId||"").toLowerCase();
+      if(!record||typeof record!=="object")return record;
+      let normalized={...record};
+      if(normalized.id==null){
+        const signature=canonicalRecord(normalized),occurrence=seen.get(signature)||0;
+        seen.set(signature,occurrence+1);
+        normalized.id=stableLegacyId(key,normalized,occurrence);
+        normalized.legacyIdAssigned=true;
+      }
+      const existing=String(normalized.businessId||"").toLowerCase();
       if(existing&&existing!==business){
-        const error=new Error("Record "+String(record.id)+" belongs to "+existing+" and cannot be synced into "+business+". Local data was preserved.");
+        const error=new Error("Record "+String(normalized.id)+" belongs to "+existing+" and cannot be synced into "+business+". Local data was preserved.");
         error.code="BUSINESS_OWNERSHIP_MISMATCH";throw error;
       }
-      return {...record,businessId:business,userId:record.userId||actor};
+      return {...normalized,businessId:business,userId:normalized.userId||actor};
     });
   }
   return safe;
 }
 function mergeBusiness(remote,incoming,deleted={},business="hiren",actor="authorized-user"){
-  const out=clone(remote||emptyState());
+  const safeRemote=normalizeBusinessRecords(remote||emptyState(),business,actor);
+  const out=clone(safeRemote||emptyState());
   const safeIncoming=normalizeBusinessRecords(incoming,business,actor);
-  const tombstones=addDeletionTombstones(mergeTombstones(remote?.__tombstones,safeIncoming?.__tombstones),deleted,business,actor);
+  const tombstones=addDeletionTombstones(mergeTombstones(safeRemote?.__tombstones,safeIncoming?.__tombstones),deleted,business,actor);
   out.__tombstones=tombstones;
   for(const key of ARRAY_KEYS){
-    if(business==="akash"&&["internalTransfers","customerOpeningBalances"].includes(key)){out[key]=Array.isArray(remote?.[key])?remote[key]:[];continue;}
-    if(business==="hiren"&&key==="milkPriceVarieties"){out[key]=Array.isArray(remote?.[key])?remote[key]:[];continue;}
-    out[key]=mergeArrayById(remote?.[key],safeIncoming?.[key],tombstones,key);
+    if(business==="akash"&&["internalTransfers","customerOpeningBalances"].includes(key)){out[key]=Array.isArray(safeRemote?.[key])?safeRemote[key]:[];continue;}
+    if(business==="hiren"&&key==="milkPriceVarieties"){out[key]=Array.isArray(safeRemote?.[key])?safeRemote[key]:[];continue;}
+    out[key]=mergeArrayById(safeRemote?.[key],safeIncoming?.[key],tombstones,key);
   }
-  out.users=mergeArrayById(remote?.users,safeIncoming?.users,tombstones,"users");
-  out.settings={...(remote?.settings||{}),...(safeIncoming?.settings||{})};
+  out.users=mergeArrayById(safeRemote?.users,safeIncoming?.users,tombstones,"users");
+  out.settings={...(safeRemote?.settings||{}),...(safeIncoming?.settings||{})};
   out.currentUser=null;
-  out.version=Math.max(Number(remote?.version||0),Number(incoming?.version||0),6);
+  out.version=Math.max(Number(safeRemote?.version||0),Number(safeIncoming?.version||0),6);
   return out;
 }
 
@@ -309,4 +328,4 @@ export default {
   }
 };
 
-export { mergeTombstones, addDeletionTombstones, mergeArrayById, normalizeBusinessRecords, mergeBusiness, mergeWorkspace };
+export { mergeTombstones, addDeletionTombstones, mergeArrayById, normalizeBusinessRecords, mergeBusiness, mergeWorkspace, stableLegacyId, canonicalRecord };
