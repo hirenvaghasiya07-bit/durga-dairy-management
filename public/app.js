@@ -82,6 +82,7 @@ function replaceFromCloud(remote){
   localStorage.setItem(KEY,JSON.stringify(db));
 }
 function syncSchemaKey(){return KEY+'::cloud-schema'}
+function pendingSyncKey(){return KEY+'::pending-sync'}
 function cloudSchemaReady(){return localStorage.getItem(syncSchemaKey())===CLOUD_SYNC_SCHEMA}
 function setCloudSchema(){localStorage.setItem(syncSchemaKey(),CLOUD_SYNC_SCHEMA)}
 async function cloudStateFetch(base,token){
@@ -133,7 +134,7 @@ async function cloudSync(){
     const push=await fetch(base+'/api/sync',{
       method:'POST',
       headers:{...({'Content-Type':'application/json','Authorization':'Bearer '+token,'Accept':'application/json'})},
-      body:JSON.stringify({workspaceId:'durga-dairy-'+BUSINESS_ID,db:pushDB,deleted:pendingDeletionPayload(pushDB)})
+      body:JSON.stringify({workspaceId:'durga-dairy-'+BUSINESS_ID,db:pushDB,deleted:pendingDeletionPayload(db)})
     });
     if(!push.ok)throw new Error('Cloud write failed ('+push.status+')');
     const j=await push.json();
@@ -147,6 +148,7 @@ async function cloudSync(){
       window.__cloudSnapshot=cloneCloud(db);
     }
     setCloudSchema();
+    localStorage.removeItem(pendingSyncKey());
     cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
   }catch(e){
     cloudState={status:'offline',lastSync:cloudState.lastSync,error:e.message};
@@ -185,7 +187,7 @@ function startCloudRealtimeSync(){
   clearInterval(window.__durgaRealtimeTimer);
   if(!CLOUD_API)return;
   window.__durgaRealtimeTimer=setInterval(async()=>{
-    if(!db.currentUser||document.hidden)return;
+    if(!db.currentUser||document.hidden||isZeroTwo())return;
     const changed=await cloudPull();
     if(!changed||!document.getElementById('root')?.querySelector('.app'))return;
     if(document.getElementById('modal'))return;
@@ -196,7 +198,7 @@ function startCloudRealtimeSync(){
       else if(v==='dailyMilk')renderCustomerDailyMilk(window.__customerDailyDate||iso());
       else render(v);
     }catch(e){}
-  },3000);
+  },15000);
 }
 const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random();
 const now=()=>new Date(); const iso=()=>now().toISOString().slice(0,10); const ym=d=>String(d||'').slice(0,7); const fmtDate=d=>{const [y,m,day]=String(d||'').slice(0,10).split('-'); return day&&m&&y?`${day}-${m}-${y}`:String(d||'')}; const filterDate=(d,mode='all',value='')=>{if(!value||mode==='all')return true; if(mode==='year')return String(d).slice(0,4)===value; if(mode==='month')return String(d).slice(0,7)===value; return String(d)===value};
@@ -213,7 +215,7 @@ function getSaleRate(key){ensureSalesConfig();return num(db.settings.salePrices[
 function setSaleRate(key,rate){ensureSalesConfig();db.settings.salePrices[key]=num(rate);save()}
 function customerRateFor(c,key,date){if(!c)return getSaleRate(key);const h=(c.priceHistory||[]).filter(x=>x.productKey===key||(!x.productKey&&c.saleKey===key)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));let rate=num(c.rate);for(const x of h){if(String(x.date)<=String(date))rate=num(x.rate)}return rate||getSaleRate(key)}
 function addCustomerPriceHistory(c,key,date,rate){c.priceHistory=c.priceHistory||[];c.priceHistory.push({id:uid(),productKey:key,date,rate:num(rate)});c.priceHistory.sort((a,b)=>String(a.date).localeCompare(String(b.date)))}
-function save(){ensureSalesConfig();db.__tombstones=db.__tombstones||{};db.businessId=BUSINESS_ID||db.businessId||'hiren';localStorage.setItem(KEY,JSON.stringify(db));scheduleCloudSync()}
+function save(){ensureSalesConfig();db.__tombstones=db.__tombstones||{};db.businessId=BUSINESS_ID||db.businessId||'hiren';localStorage.setItem(KEY,JSON.stringify(db));if(!isZeroTwo())localStorage.setItem(pendingSyncKey(),JSON.stringify({queuedAt:new Date().toISOString(),businessId:BUSINESS_ID}));scheduleCloudSync()}
 function user(){return db.users.find(u=>u.id===db.currentUser)}
 function audit(action,entity,recordId,before=null,after=null){db.audit.push({id:uid(),at:new Date().toISOString(),userId:user()?.id||'system',userName:user()?.name||'System',action,entity,recordId,before,after});save()}
 function allowed(role,feature){if(role==='Owner'||role==='Full Access Member')return true;if(role==='Manager')return !['users','cashSettings'].includes(feature);if(role==='Family Member')return ['expenses'].includes(feature);if(role==='Staff')return ['sales'].includes(feature);return false}
@@ -247,7 +249,7 @@ function logout(){
 }
 function navItems(){return [['dashboard','⌂ Dashboard'],['sales','▣ Daily Sale'],['collections','▤ Bill Collection'],['milk','🥛 Milk Purchase'],['stock','▦ Stock Purchase'],['expenses','₹ Expense'],['customers','♙ Customers'],['vendors','▤ Vendors'],['cash','◉ Cash Flow'],['reports','▥ Reports'],['audit','◌ Activity Log'],['backup','☁ Online Backup'],['terms','Customer Bill Terms'],['users','♙ Members']].filter(([k])=>allowed(user()?.role,k)||k==='dashboard'||k==='audit')}
 function applyDateFormat(){document.querySelectorAll('input[type="date"]').forEach(el=>{el.setAttribute('lang','en-GB');el.setAttribute('title','DD/MM/YYYY');});}
-function shell(active,body,title){document.getElementById('root').innerHTML=`<div class="app"><div class="sideBackdrop" id="sideBackdrop" onclick="closeSide()"></div><aside class="sidebar" id="side"><div class="brand">🐄 Durga Dairy<small>Management System</small></div><div class="nav">${navItems().map(([k,t])=>`<button class="${active===k?'active':''}" onclick="render('${k}')">${t}</button>`).join('')}</div><div style="position:absolute;bottom:15px;left:12px;right:12px"><button class="nav" style="width:100%;border:0;background:#ffffff12;color:#fff;padding:10px;border-radius:8px" onclick="logout()">↪ Logout</button></div></aside><section class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="menuBtn" onclick="toggleSide()">☰</button><b>${title||'Dashboard'}</b></div><div class="right"><span class="pill green">● Cloud / Local</span><span class="workspace">Durga Dairy</span><span class="avatar">${esc((user()?.name||'?')[0])}</span><span class="small">${esc(user()?.name||'')}</span></div></header><main class="page">${body}<div class="footer">Durga Dairy Management • Online + Offline prototype • Logged in as ${esc(user()?.name||'')}</div></main></section></div>`;if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});applyDateFormat()}
+function shell(active,body,title){document.getElementById('root').innerHTML=`<div class="app"><div class="sideBackdrop" id="sideBackdrop" onclick="closeSide()"></div><aside class="sidebar" id="side"><div class="brand">🐄 Durga Dairy<small>Management System</small></div><div class="nav">${navItems().map(([k,t])=>`<button class="${active===k?'active':''}" onclick="render('${k}')">${t}</button>`).join('')}</div><div style="position:absolute;bottom:15px;left:12px;right:12px"><button class="nav" style="width:100%;border:0;background:#ffffff12;color:#fff;padding:10px;border-radius:8px" onclick="logout()">↪ Logout</button></div></aside><section class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="menuBtn" onclick="toggleSide()">☰</button><b>${title||'Dashboard'}</b></div><div class="right"><span class="pill ${cloudState.status==='online'?'green':cloudState.status==='offline'?'red':'orange'}" title="${esc(cloudState.error||'')}">${cloudState.status==='online'?'● Cloud Synced':cloudState.status==='syncing'?'↻ Syncing':cloudState.status==='offline'?'⚠ Sync Failed':'● Local / Waiting'}</span><span class="workspace">${cloudState.lastSync?'Last sync '+new Date(cloudState.lastSync).toLocaleTimeString('en-IN'):'Durga Dairy'}</span><span class="avatar">${esc((user()?.name||'?')[0])}</span><span class="small">${esc(user()?.name||'')}</span></div></header><main class="page">${body}<div class="footer">Durga Dairy Management • Online + Offline prototype • Logged in as ${esc(user()?.name||'')}</div></main></section></div>`;if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});applyDateFormat()}
 function toggleSide(){const side=document.getElementById('side');side?.classList.toggle('open');document.getElementById('sideBackdrop')?.classList.toggle('open',!!side?.classList.contains('open'))}function closeSide(){document.getElementById('side')?.classList.remove('open');document.getElementById('sideBackdrop')?.classList.remove('open')}
 function modal(title,body,saveFn){document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="modal"><div class="modalbox"><div class="modalhead"><h3>${title}</h3><button class="x" onclick="closeModal()">×</button></div>${body}<div class="actions"><button class="btn gray" onclick="closeModal()">Cancel</button><button class="btn" id="modalSave">Save</button></div></div></div>`);document.getElementById('modalSave').onclick=saveFn;applyDateFormat()}
 function closeModal(){document.getElementById('modal')?.remove()}
@@ -934,3 +936,10 @@ function zeroTwoReport(source='all'){
 function renderZeroTwo(source='all'){if(!isZeroTwo())return portalChooser();document.getElementById('root').innerHTML='<div class="app"><section class="main" style="width:100%"><header class="topbar"><div><b>Durga Dairy • Zero Two</b></div><div class="right"><span class="pill orange">Full Access</span><span class="workspace">All Data</span><span class="avatar">'+esc((user()?.name||'?')[0])+'</span><span class="small">'+esc(user()?.name||'')+'</span></div></header><main class="page">'+zeroTwoReport(source)+'<div class="footer">Zero Two • Read-only combined reporting • Hiren + Akash</div></main></section></div>'}
 
 init();
+
+if(typeof window!=='undefined'&&!window.__durgaSyncListeners){
+  window.__durgaSyncListeners=true;
+  window.addEventListener('online',()=>{if(db.currentUser&&!isZeroTwo())cloudSync()});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&db.currentUser&&!isZeroTwo())cloudSync()});
+  window.addEventListener('focus',()=>{if(db.currentUser&&!isZeroTwo())cloudSync()});
+}
