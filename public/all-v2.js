@@ -5,7 +5,7 @@ function akashV2Stats(from='',to=''){
  const source=globalThis.__zeroTwoData?.akash||{}, z=source?.settings?.akashV2||{}, psAll=Array.isArray(z.purchases)?z.purchases:[], ssAll=Array.isArray(z.sales)?z.sales:[], csAll=Array.isArray(z.collections)?z.collections:[], exAll=Array.isArray(z.expenses)?z.expenses:[];
  const inRange=x=>(!from||String(x.date||'')>=from)&&(!to||String(x.date||'')<=to),ps=psAll.filter(inRange),ss=ssAll.filter(inRange),cs=csAll.filter(inRange),ex=exAll.filter(inRange);
  const purchaseRate=(date)=>{const h=(z.purchaseRates||[]).filter(x=>String(x.date)<=String(date)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));return h.length?Number(h[h.length-1].rate||0):72};
- const saleable=x=>Number(x.actualQty||0)*(1);
+ const saleable=x=>Number(x.actualQty||0)*(1+Number(x.extraPercent||0)/100);
  const saleAmt=x=>saleable(x)*Number(x.rate||0);
  const cost=x=>Number(x.actualQty||0)*purchaseRate(x.date);
  const profit=x=>saleAmt(x)-cost(x);
@@ -26,7 +26,7 @@ window.renderZeroTwo=function(source,from=window.__zeroFrom||'',to=window.__zero
  const business=(name,x)=>'<div class="notice"><b>'+name+'</b><div style="display:grid;gap:5px;margin-top:8px"><div>Sales: <b>'+money(x.salesTotal)+'</b></div><div>Milk / Saleable: <b>'+Number(x.milkSold||0).toFixed(2)+' L</b></div><div>Purchase: <b>'+money(x.purchaseTotal)+'</b></div><div>Collection: <b>'+money(x.collectionTotal)+'</b></div><div>Vendor Payable: <b>'+money(x.payable)+'</b></div><div>Expenses: <b>'+money(x.expenseTotal)+'</b></div><div>Profit / Loss: <b>'+money(x.profit)+'</b></div><div>Cash Position: <b>'+money(x.cashAvailable)+'</b></div></div></div>';
  const ak=source==='akash'||source==='all'?a:null;
  const inRange=x=>(!from||String(x.date||'')>=from)&&(!to||String(x.date||'')<=to);
- const akRecent=ak?[...(ak.akashV2?.sales||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Daily Sale',description:x.slabName,amount:(Number(x.saleableQty||0)*Number(x.rate||0))})),...(ak.akashV2?.purchases||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Milk Purchase',description:'Main Vendor',amount:(Number(x.vendorMorning||0)+Number(x.vendorEvening||0))*Number(x.rate||0)})),...(ak.akashV2?.collections||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Bill Collection',description:x.note||'Bulk collection',amount:Number(x.amount||0)})),...(ak.akashV2?.expenses||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Expense',description:x.category||x.description||'Expense',amount:-Number(x.amount||0)}))]:[];
+ const akRecent=ak?[...(ak.akashV2?.sales||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Daily Sale',description:x.slabName,amount:(Number(x.actualQty||0)*(1+Number(x.extraPercent||0)/100)*Number(x.rate||0))})),...(ak.akashV2?.purchases||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Milk Purchase',description:'Main Vendor',amount:(Number(x.vendorMorning||0)+Number(x.vendorEvening||0))*Number(x.rate||0)})),...(ak.akashV2?.collections||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Bill Collection',description:x.note||'Bulk collection',amount:Number(x.amount||0)})),...(ak.akashV2?.expenses||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Expense',description:x.category||x.description||'Expense',amount:-Number(x.amount||0)}))]:[];
  const hs=oldStats('hiren',from,to);
  const hr=(source==='akash'?[]:[
  ...(hs.sales||[]).map(x=>({date:x.date,source:'Hiren',kind:'Sale',description:x.product||'Sale',amount:Number(x.amount||0)})),
