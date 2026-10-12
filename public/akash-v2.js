@@ -158,4 +158,59 @@
   function renderAkashCash(){
     const z=a(), start=iso().slice(0,7)+'-01',end=iso(), ss=periodRows(z.sales,start,end),cs=periodRows(z.collections,start,end),ps=periodRows(z.purchases,start,end),ex=periodRows(z.expenses||[],start,end);
     const salesCash=sum(ss,x=>x.cashAmount),salesBank=sum(ss,x=>x.bankAmount),colCash=sum(cs,x=>x.cashAmount),colBank=sum(cs,x=>x.bankAmount),expenseCash=sum(ex,x=>String(x.paymentMode||'Cash')==='Cash'?x.amount:0),expenseBank=sum(ex,x=>String(x.paymentMode||'')!=='Cash'?x.amount:0),paid=sum(ps,x=>x.paid);
-    const cash=salesCash+colCash-expenseCash-paid,bank=salesBank+colBank- --- TRUNCATED --- 29,474 chars
+    const cash=salesCash+colCash-expenseCash-paid,bank=salesBank+colBank-expenseBank;
+    const body='<div class="sectionhead"><div><h1>Cash Flow</h1><div class="muted">Current month money position</div></div></div><div class="grid">'+metric('Cash In',moneyA(salesCash+colCash))+metric('Bank / UPI In',moneyA(salesBank+colBank))+metric('Cash Out',moneyA(expenseCash+paid))+metric('Cash Balance',moneyA(cash))+metric('Bank Balance',moneyA(bank))+metric('Total Available',moneyA(cash+bank))+'</div><div class="two section"><div class="card"><h2>Cash</h2><p>Daily Sale Cash: <b>'+moneyA(salesCash)+'</b></p><p>Bill Collection Cash: <b>'+moneyA(colCash)+'</b></p><p>Expenses Cash: <b>'+moneyA(expenseCash)+'</b></p><p>Vendor Paid: <b>'+moneyA(paid)+'</b></p><hr><h2>'+moneyA(cash)+'</h2></div><div class="card"><h2>Bank / UPI</h2><p>Daily Sale UPI: <b>'+moneyA(salesBank)+'</b></p><p>Bill Collection UPI: <b>'+moneyA(colBank)+'</b></p><p>Non-cash Expenses: <b>'+moneyA(expenseBank)+'</b></p><hr><h2>'+moneyA(bank)+'</h2></div></div>';
+    akashShell('cash',body,'Cash Flow');
+  }
+
+  function renderAkashReports(){
+    const z=a(), ss=z.sales, ps=z.purchases, cs=z.collections, ex=db.expenses||[];
+    const bySlab=rateGroups(ss).map(s=>{const r=ss.filter(x=>('r'+num(x.rate))===s.id),rev=sum(r,saleAmount),pr=sum(r,saleProfit);return '<div class="card"><h3>'+esc(s.name)+'</h3><p>Actual: <b>'+sum(r,x=>x.actualQty).toFixed(2)+' L</b></p><p>Saleable: <b>'+sum(r,saleable).toFixed(2)+' L</b></p><p>Sales: <b>'+moneyA(rev)+'</b></p><p>Profit: <b>'+moneyA(pr)+'</b></p><p>Profit %: <b>'+(rev?(pr/rev*100).toFixed(2):'0')+'%</b></p></div>'}).join('');
+    const body='<div class="sectionhead"><div><h1>Akash Reports</h1><div class="muted">Current stored position • all history</div></div></div><div class="grid">'+metric('Purchase',moneyA(sum(ps,purchaseAmt)))+metric('Sales',moneyA(sum(ss,saleAmount)))+metric('Collection',moneyA(sum(cs,x=>x.amount)))+metric('Expense',moneyA(sum(ex,x=>x.amount)))+'</div><div class="sectionhead"><h2>Slab-wise Profit</h2></div><div class="two">'+bySlab+'</div><div class="card section"><h2>Daily Position</h2>'+tableRows(ss.map(x=>({...x,id:x.id,_entity:'akashReport'})),[['Date',x=>fmtDate(x.date)],['Rate Category',x=>esc(x.slabName&&!/%/.test(x.slabName)?x.slabName:moneyA(x.rate)+' / L')],['Actual',x=>x.actualQty.toFixed(2)+' L'],['Saleable',x=>x.saleableQty.toFixed(2)+' L'],['Sales',x=>moneyA(saleAmount(x))],['Profit',x=>moneyA(saleProfit(x))]],false)+'</div>';
+    akashShell('reports',body,'Reports');
+  }
+
+  function renderAkashCustomers(){
+    const body='<div class="sectionhead"><div><h1>Customers</h1><div class="muted">Customer-wise billing is not maintained in Akash software.</div></div></div><div class="card"><h2>Bulk Billing Workflow</h2><p>Customer bills are prepared in the other billing software.</p><p>Here you only enter the total amount received for the day/period.</p><p>Use <b>Bill Collection</b> to split Cash and UPI / Bank.</p></div>';
+    akashShell('customers',body,'Customers');
+  }
+
+  function editRow(arr,id,fn){const x=arr.find(r=>r.id===id);if(x)fn(x)}
+  window.akashPurchaseModal=akashPurchaseModal;window.akashSaleModal=akashSaleModal;window.akashCollectionModal=akashCollectionModal;window.akashSlabModal=akashSlabModal;window.akashSlabManager=akashSlabManager;window.akashRateModal=akashRateModal;
+  window.akashEditPurchase=id=>{const x=a().purchases.find(r=>r.id===id);if(x)akashPurchaseModal({...x,_edit:true})};
+  window.akashDeletePurchase=id=>{if(!confirm('Delete this purchase entry?'))return;const i=a().purchases.findIndex(x=>x.id===id);if(i>=0){const old=a().purchases[i];a().purchases.splice(i,1);audit('DELETE','akashPurchase',id,old,null);saveA();render('milk')}};
+  window.akashEditSale=id=>{const x=a().sales.find(r=>r.id===id);if(x)akashSaleModal({...x,_edit:true})};
+  window.akashDeleteSale=id=>{if(!confirm('Delete this sale entry?'))return;const i=a().sales.findIndex(x=>x.id===id);if(i>=0){const old=a().sales[i];a().sales.splice(i,1);audit('DELETE','akashSale',id,old,null);saveA();render('sales')}};
+  window.akashEditCollection=id=>{const x=a().collections.find(r=>r.id===id);if(x)akashCollectionModal({...x,_edit:true})};
+  window.akashDeleteCollection=id=>{if(!confirm('Delete this collection entry?'))return;const i=a().collections.findIndex(x=>x.id===id);if(i>=0){const old=a().collections[i];a().collections.splice(i,1);audit('DELETE','akashCollection',id,old,null);saveA();render('collections')}};
+
+  window.renderSales=function(){if(isAkash())return renderAkashSales();return undefined};
+  window.renderCollections=function(){if(isAkash())return renderAkashCollections();return undefined};
+  window.renderMilk=function(){if(isAkash())return renderAkashMilk();return undefined};
+  window.renderCustomers=function(){if(isAkash())return renderAkashCustomers();return undefined};
+  window.renderCash=function(){if(isAkash())return renderAkashCash();return undefined};
+  window.renderReports=function(){if(isAkash())return renderAkashReports();return undefined};
+  window.dashboard=function(){if(isAkash())return akashDashboard();return undefined};
+  window.renderExpenses=function(){if(isAkash()){return renderExpensesOriginal?renderExpensesOriginal():undefined;}};
+  if(!window.renderExpensesOriginal) window.renderExpensesOriginal=window.renderExpenses;
+  /* Keep original expense renderer by capturing it before replacing nav; no override needed. */
+  window.render=function(k){
+    window.__durgaView=k;
+    if(!isAkash()) return;
+    if(k==='dashboard')return akashDashboard();
+    if(k==='sales')return renderAkashSales();
+    if(k==='collections')return renderAkashCollections();
+    if(k==='milk')return renderAkashMilk();
+    if(k==='expenses')return renderExpensesOriginal?renderExpensesOriginal():renderExpenses();
+    if(k==='cash')return renderAkashCash();
+    if(k==='reports')return renderAkashReports();
+    if(k==='audit')return renderAudit();
+    if(k==='customers')return renderAkashCustomers();
+    /* hidden legacy screens are not navigated */
+  };
+  /* Fix expense capture: app.js has already defined it; preserve the original under a safe alias. */
+  if(!window.__akashBooted){
+    window.__akashBooted=true;
+    render('dashboard');
+  }
+})();
