@@ -246,7 +246,7 @@ function logout(){
   BUSINESS_ID='';KEY=BASE_KEY;
   portalChooser();
 }
-function navItems(){return [['dashboard','⌂ Dashboard'],['sales','▣ Daily Sale'],['collections','▤ Bill Collection'],['milk','🥛 Milk Purchase'],['stock','▦ Stock Purchase'],['expenses','₹ Expense'],['customers','♙ Customers'],['vendors','▤ Vendors'],['cash','◉ Cash Flow'],['reports','▥ Reports'],['audit','◌ Activity Log'],['backup','☁ Online Backup'],['users','♙ Members']].filter(([k])=>allowed(user()?.role,k)||k==='dashboard'||k==='audit')}
+function navItems(){return [['dashboard','⌂ Dashboard'],['sales','▣ Daily Sale'],['collections','▤ Bill Collection'],['milk','🥛 Milk Purchase'],['stock','▦ Stock Purchase'],['expenses','₹ Expense'],['customers','♙ Customers'],['vendors','▤ Vendors'],['cash','◉ Cash Flow'],['reports','▥ Reports'],['audit','◌ Activity Log'],['backup','☁ Online Backup'],['terms','Customer Bill Terms'],['users','♙ Members']].filter(([k])=>allowed(user()?.role,k)||k==='dashboard'||k==='audit')}
 function applyDateFormat(){document.querySelectorAll('input[type="date"]').forEach(el=>{el.setAttribute('lang','en-GB');el.setAttribute('title','DD/MM/YYYY');});}
 function shell(active,body,title){document.getElementById('root').innerHTML=`<div class="app"><div class="sideBackdrop" id="sideBackdrop" onclick="closeSide()"></div><aside class="sidebar" id="side"><div class="brand">🐄 Durga Dairy<small>Management System</small></div><div class="nav">${navItems().map(([k,t])=>`<button class="${active===k?'active':''}" onclick="render('${k}')">${t}</button>`).join('')}</div><div style="position:absolute;bottom:15px;left:12px;right:12px"><button class="nav" style="width:100%;border:0;background:#ffffff12;color:#fff;padding:10px;border-radius:8px" onclick="logout()">↪ Logout</button></div></aside><section class="main"><header class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="menuBtn" onclick="toggleSide()">☰</button><b>${title||'Dashboard'}</b></div><div class="right"><span class="pill green">● Cloud / Local</span><span class="workspace">Durga Dairy</span><span class="avatar">${esc((user()?.name||'?')[0])}</span><span class="small">${esc(user()?.name||'')}</span></div></header><main class="page">${body}<div class="footer">Durga Dairy Management • Online + Offline prototype • Logged in as ${esc(user()?.name||'')}</div></main></section></div>`;if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});applyDateFormat()}
 function toggleSide(){const side=document.getElementById('side');side?.classList.toggle('open');document.getElementById('sideBackdrop')?.classList.toggle('open',!!side?.classList.contains('open'))}function closeSide(){document.getElementById('side')?.classList.remove('open');document.getElementById('sideBackdrop')?.classList.remove('open')}
@@ -585,53 +585,43 @@ function customerDailyAmountChanged(){const q=num(val('morningQty'))+num(val('ev
 function pdfEscape(s){return String(s??'').replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)').replace(/[^\x20-\x7E]/g,'?')}
 function makeSimplePDF(lines,title){const W=595,H=842,parts=['BT','/F1 11 Tf','45 800 Td'];let first=true;for(const line of [title,...lines]){if(!first)parts.push('0 -18 Td');parts.push('('+pdfEscape(line)+') Tj');first=false}parts.push('ET');const stream=parts.join('\n'),objs=[];objs.push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj');objs.push('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj');objs.push('3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+W+' '+H+'] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj');objs.push('4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj');objs.push('5 0 obj\n<< /Length '+stream.length+' >>\nstream\n'+stream+'\nendstream\nendobj');let pdf='%PDF-1.4\n',offs=[0];for(const o of objs){offs.push(pdf.length);pdf+=o+'\n'}const xref=pdf.length;pdf+='xref\n0 '+(objs.length+1)+'\n0000000000 65535 f \n';for(let i=1;i<offs.length;i++)pdf+=String(offs[i]).padStart(10,'0')+' 00000 n \n';pdf+='trailer\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';return new Blob([pdf],{type:'application/pdf'})}
 function pdfMoney(n){return 'Rs.'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}
-function makeCustomerBillPDF(d){
-  const W=595,H=842,cmd=[],blue='0.10 0.46 0.79',light='0.88 0.94 0.98';
-  const T=(x,y,s,t,b=false)=>cmd.push('BT',b?'/F2 '+s+' Tf':'/F1 '+s+' Tf',x+' '+y+' Td','('+pdfEscape(t)+') Tj','ET');
-  const R=(x,y,w,h,fill)=>{if(fill)cmd.push(fill+' rg');cmd.push(x+' '+y+' '+w+' '+h+' re','f');if(fill)cmd.push('0 0 0 rg')};
-  const S=(x,y,w,h)=>cmd.push('0.45 G',x+' '+y+' '+w+' '+h+' re','S','0 G');
-  const L=(x1,y1,x2,y2)=>cmd.push('0.45 G',x1+' '+y1+' m',x2+' '+y2+' l','S','0 G');
-  T(24,810,17,'DURGA DAIRY',true);T(24,793,8,'Monthly Milk Bill');
-  T(24,765,9,'Name :- '+d.c.name,true);T(24,751,9,'Phone Number :- '+(d.c.mobile||'-'));T(24,737,9,'Address :- '+(d.c.address||'-'));
-  T(424,765,9,'Durga Dairy',true);T(424,751,9,'Bill Date :- '+fmtDate(iso()));
-  const product=d.c.product||'Milk',all=(db.customerSales||[]).filter(x=>x.customerId===d.c.id&&ym(x.date)===d.month&&x.productKey==='milk');
-  const rate=all.length?num(all[0].rate):customerRateFor(d.c,'milk',d.month+'-01');
-  T(24,712,9,'Product :- '+product);T(170,712,9,'Price :- '+pdfMoney(rate));
-  const a=String(d.month).split('-').map(Number),days=new Date(a[0],a[1],0).getDate(),items=[];
-  for(let day=1;day<=days;day++){const dt=d.month+'-'+String(day).padStart(2,'0'),x=customerDailyExisting(d.c.id,dt);items.push({day,m:num(x?.morningQty),e:num(x?.eveningQty)})}
-  const left=items.slice(0,16),right=items.slice(16,32),top=683,rh=18,hh=22,tw=260,cw=[46,107,107];
-  const table=(x,rows)=>{R(x,top-hh,tw,hh,blue);T(x+10,top-15,8,'Date',true);T(x+75,top-15,8,'Morning',true);T(x+183,top-15,8,'Evening',true);rows.forEach((r,i)=>{const y=top-hh-(i+1)*rh;if(i%2===0)R(x,y,tw,rh,light);S(x,y,tw,rh);L(x+cw[0],y,x+cw[0],y+rh);L(x+cw[0]+cw[1],y,x+cw[0]+cw[1],y+rh);T(x+16,y+5,8,String(r.day).padStart(2,'0'));T(x+83,y+5,8,r.m?r.m.toFixed(1):'-');T(x+191,y+5,8,r.e?r.e.toFixed(1):'-')});S(x,top-hh-rows.length*rh,tw,hh+rows.length*rh)};
-  table(24,left);table(311,right);
-  let y=top-hh-16*rh-25;R(24,y,547,24,light);S(24,y,547,24);T(32,y+8,9,'Total:',true);T(238,y+8,9,d.cur.qty.toFixed(2)+' L',true);T(365,y+8,9,'Total Amount '+pdfMoney(d.cur.bill),true);
-  y-=34;T(270,y,11,'Summary',true);y-=20;
-  const groups={};all.forEach(x=>{const k=num(x.rate).toFixed(2);groups[k]=groups[k]||{q:0,a:0};groups[k].q+=num(x.qty);groups[k].a+=num(x.amount)});
-  const keys=Object.keys(groups);if(!keys.length)keys.push(rate.toFixed(2));
-  keys.forEach(k=>{const g=groups[k]||{q:d.cur.qty,a:d.cur.bill};R(24,y-5,547,23,light);T(32,y+3,9,product+':');T(215,y+3,9,g.q.toFixed(2)+' L x '+k+' = '+pdfMoney(g.a),true);y-=25});
-  T(32,y+3,10,'Total Amount:',true);T(470,y+3,10,pdfMoney(d.cur.bill),true);y-=28;
-  const bw=547,cw2=bw/2,rh2=25;
-  R(24,y-rh2,cw2,rh2,'0.94 0.97 0.99');R(24+cw2,y-rh2,cw2,rh2,'0.94 0.97 0.99');S(24,y-rh2,bw,rh2);L(24+cw2,y-rh2,24+cw2,y);
-  T(31,y-16,8,'Previous Month:');T(230,y-16,8,pdfMoney(d.opening),true);T(304,y-16,8,'Current Month:');T(505,y-16,8,pdfMoney(d.cur.bill),true);y-=rh2;
-  R(24,y-rh2,cw2,rh2,'0.94 0.97 0.99');R(24+cw2,y-rh2,cw2,rh2,'0.94 0.97 0.99');S(24,y-rh2,bw,rh2);L(24+cw2,y-rh2,24+cw2,y);
-  T(31,y-16,8,'Received:');T(230,y-16,8,pdfMoney(d.paid),true);T(304,y-16,8,'Total Amount:');T(505,y-16,8,pdfMoney(d.total),true);y-=rh2+15;
-  T(24,y,10,'Balance Payable: '+pdfMoney(d.balance),true);T(24,y-22,9,'Thank you, '+d.c.name+', for your continued business.');
-  T(24,28,7,'Durga Dairy - Date-wise monthly milk statement');
-  const stream=cmd.join('\n');
-  const objs=[
-    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj',
-    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj',
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+W+' '+H+'] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>\nendobj',
-    '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj',
-    '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj',
-    '6 0 obj\n<< /Length '+new TextEncoder().encode(stream).length+' >>\nstream\n'+stream+'\nendstream\nendobj'
-  ];
-  let pdf='%PDF-1.4\n';
-  const offsets=[0];
-  for(const o of objs){offsets.push(new TextEncoder().encode(pdf).length);pdf+=o+'\n'}
-  const xref=new TextEncoder().encode(pdf).length;
-  pdf+='xref\n0 '+(objs.length+1)+'\n0000000000 65535 f \n';
-  for(let i=1;i<offsets.length;i++)pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';
-  pdf+='trailer\n<< /Size '+(objs.length+1)+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+function wrapPdfText(value,width=92){
+  const words=String(value??'').replace(/\r/g,'').split(/\s+/);const lines=[];let line='';
+  for(const word of words){if(!word)continue;if((line+' '+word).trim().length>width){if(line)lines.push(line);line=word}else line=(line+' '+word).trim()}
+  if(line)lines.push(line);return lines.length?lines:[''];
+}
+function makeTextPDFPages(lines){
+  const pages=[];for(let i=0;i<lines.length;i+=45)pages.push(lines.slice(i,i+45));if(!pages.length)pages.push(['']);
+  const objects=[];const pageIds=pages.map((_,i)=>5+i*2),contentIds=pages.map((_,i)=>6+i*2);
+  objects[1]='1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj';
+  objects[2]='2 0 obj\n<< /Type /Pages /Kids ['+pageIds.map(id=>id+' 0 R').join(' ')+'] /Count '+pages.length+' >>\nendobj';
+  objects[3]='3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj';
+  objects[4]='4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj';
+  pages.forEach((page,i)=>{
+    const content=['BT','/F2 14 Tf','45 805 Td','(Durga Dairy Customer Bill) Tj','/F1 9 Tf','0 -22 Td'];
+    page.forEach((line,j)=>{if(j)content.push('0 -16 Td');content.push('('+pdfEscape(line)+') Tj')});
+    content.push('ET');const stream=content.join('\n'),pid=pageIds[i],cid=contentIds[i];
+    objects[pid]=''+pid+' 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents '+cid+' 0 R >>\nendobj';
+    objects[cid]=cid+' 0 obj\n<< /Length '+new TextEncoder().encode(stream).length+' >>\nstream\n'+stream+'\nendstream\nendobj';
+  });
+  let pdf='%PDF-1.4\n';const offsets=[0];for(let i=1;i<objects.length;i++){offsets[i]=new TextEncoder().encode(pdf).length;pdf+=objects[i]+'\n'}
+  const xref=new TextEncoder().encode(pdf).length;pdf+='xref\n0 '+objects.length+'\n0000000000 65535 f \n';
+  for(let i=1;i<objects.length;i++)pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';
+  pdf+='trailer\n<< /Size '+objects.length+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
   return new Blob([new TextEncoder().encode(pdf)],{type:'application/pdf'});
+}
+function makeCustomerBillPDF(d){
+  const c=d.c,lines=[];const terms=String(db.settings?.customerBillTerms||'').trim();
+  lines.push('Customer: '+(c.name||''),'Phone: '+(c.mobile||'-'),'Address: '+(c.address||'-'),'Bill Number: DD-'+c.id+'-'+d.month,'Billing Period: '+d.month,'Bill Date: '+fmtDate(iso()),'');
+  lines.push('PREVIOUS OUTSTANDING: '+pdfMoney(d.opening),'CURRENT MONTH CHARGES: '+pdfMoney(d.cur.bill),'PAYMENTS RECEIVED: '+pdfMoney(d.paid),'CREDITS / ADJUSTMENTS: '+pdfMoney(d.adj),'CLOSING OUTSTANDING: '+pdfMoney(d.balance),'','DATE-WISE TRANSACTION SUMMARY');
+  const entries=(db.customerSales||[]).filter(x=>x.customerId===c.id&&ym(x.date)===d.month).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  if(entries.length){for(const x of entries){lines.push(fmtDate(x.date)+' | '+(x.product||'Milk')+' | Qty '+num(x.qty).toFixed(2)+' | Rate '+pdfMoney(x.rate)+' | Amount '+pdfMoney(x.amount));if(x.note)lines.push('Note: '+x.note)}}else lines.push('No date-wise sales entries recorded for this month.');
+  const payments=(db.customerPayments||[]).filter(x=>x.customerId===c.id&&x.month===d.month).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  lines.push('','PAYMENT HISTORY');if(payments.length)for(const p of payments)lines.push(fmtDate(p.date||p.month)+' | Paid '+pdfMoney(p.amount)+' | Adjustment '+pdfMoney(p.adjustment)+' | '+(p.mode||p.paymentMode||'')+' '+(p.note||''));else lines.push('No payments recorded for this month.');
+  lines.push('','PAYMENT INSTRUCTIONS');lines.push(...wrapPdfText(db.settings?.customerBillPaymentInstructions||'Please contact Durga Dairy to confirm the payment method and outstanding balance.'));
+  lines.push('','TERMS & CONDITIONS');if(terms){for(const paragraph of terms.split(/\n+/)){lines.push(...wrapPdfText(paragraph));lines.push('')}}else lines.push('No global Terms & Conditions have been saved yet.');
+  lines.push('','This statement is generated from the current customer ledger. Please contact Durga Dairy if any entry requires review.');
+  return makeTextPDFPages(lines);
 }
 function customerBillData(id,month){const c=(db.customers||[]).find(x=>x.id===id);if(!c)return null;const prev=prevMonth(month),cur=customerMonthSummary(id,month),pr=customerMonthSummary(id,prev),opening=pr.balance,pay=(db.customerPayments||[]).filter(x=>x.customerId===id&&x.month===month),paid=pay.reduce((a,x)=>a+num(x.amount),0),adj=pay.reduce((a,x)=>a+num(x.adjustment),0),total=opening+cur.bill,balance=Math.max(0,total-paid-adj);return{c,month,prev,cur,pr,opening,paid,adj,total,balance}}
 async function shareCustomerBill(id,month){
@@ -787,6 +777,23 @@ function reportHTML(m,r){return `<div class="grid">${metric('Total Sales',money(
 function changeReport(m){document.getElementById('reportBody').innerHTML=reportHTML(m,reportData(m))}
 function exportCSVReport(){const m=document.getElementById('reportMonth')?.value||ym(iso()),r=reportData(m);const files={Summary:[['Metric','Amount'],['Total Sales',r.sales],['Bill Collection',r.collection],['Total Purchase',r.purchase],['Expenses',r.expense],['Gross Profit',r.gross],['Net Profit/Loss',r.net]],Product_Analysis:[['Product','Qty Sold','Sales','Cost','Profit','Margin %','Sales %'],...r.products.map(p=>[p.name,p.qty,p.saleAmt,p.cost,p.profit,p.margin.toFixed(2),p.salesPct.toFixed(2)])],Daily_Sales:[['Date','Product','Qty','Amount','Description'],...db.sales.filter(x=>ym(x.date)===m).map(x=>[x.date,x.product,x.qty,x.amount,x.description])],Milk_Purchase:[['Date','Vendor','Cow L','Cow Rate','Buffalo L','Buffalo Rate','Total','Paid','Balance'],...db.milk.filter(x=>ym(x.date)===m).map(x=>[x.date,x.vendor,x.cowLitres,x.cowRate,x.buffLitres,x.buffRate,x.total,x.paid,x.balance])],Expenses:[['Date','Category','Amount','Payment','Description'],...db.expenses.filter(x=>ym(x.date)===m).map(x=>[x.date,x.category,x.amount,x.paymentMode,x.description])],Stock_Purchase:[['Date','Item','Qty','Unit','Rate','Total','Paid','Balance','Vendor'],...db.stockPurchases.filter(x=>ym(x.date)===m).map(x=>[x.date,x.item,x.qty,x.unit,x.rate,x.total,x.paid,x.balance,x.vendor])],Collections:[['Date','Mode','Customer/Note','Amount','Payment'],...db.collections.filter(x=>ym(x.date)===m).map(x=>[x.date,x.mode,x.name,x.amount,x.paymentMode])]};Object.entries(files).forEach(([name,rows])=>{const csv=rows.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');download(csv,`Durga-Dairy-${m}-${name}.csv`,'text/csv')});alert('Report CSV pack exported. Excel can open these files directly.')}
 function download(data,name,type){const b=new Blob([data],{type}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
+function renderBillTerms(){
+  const current=String(db.settings?.customerBillTerms||''),instructions=String(db.settings?.customerBillPaymentInstructions||'');
+  shell('terms',`<div class="sectionhead"><div><h1>Customer Bill Terms & Conditions</h1><div class="muted">Saved centrally in the business settings and synchronized across devices.</div></div></div><div class="card"><div class="field"><label>Terms & Conditions</label><textarea id="billTerms" rows="12" placeholder="Enter your bill terms and conditions here. Nothing is hardcoded.">${esc(current)}</textarea></div><div class="field" style="margin-top:12px"><label>Payment Instructions</label><textarea id="billPaymentInstructions" rows="3" placeholder="Enter payment instructions shown on new bills.">${esc(instructions)}</textarea></div><div class="toolbar" style="margin-top:14px"><button class="btn" onclick="saveBillTerms()">Save Terms</button><button class="btn gray" onclick="previewBillTerms()">Preview</button><button class="btn orange" onclick="restoreBillTerms()">Restore Previous Version</button></div><p class="muted">New PDF bills use the latest saved terms. Saving terms does not change transactions or customer balances.</p></div>`,'Customer Bill Terms');
+}
+function saveBillTerms(){
+  const next=String(val('billTerms')||''),payment=String(val('billPaymentInstructions')||''),previous=String(db.settings?.customerBillTerms||'');
+  if(next!==previous){db.settings.customerBillTermsHistory=Array.isArray(db.settings.customerBillTermsHistory)?db.settings.customerBillTermsHistory:[];db.settings.customerBillTermsHistory.push({id:uid(),terms:previous,updatedAt:new Date().toISOString(),updatedBy:user()?.id||''});db.settings.customerBillTermsHistory=db.settings.customerBillTermsHistory.slice(-20);}
+  db.settings.customerBillTerms=next;db.settings.customerBillPaymentInstructions=payment;db.settings.customerBillTermsUpdatedAt=new Date().toISOString();audit('UPDATE','Customer Bill Terms','global',previous,next);save();alert('Customer bill terms saved and queued for cloud synchronization.');
+}
+function previewBillTerms(){
+  const terms=String(val('billTerms')||db.settings?.customerBillTerms||'');modal('Terms & Conditions Preview','<div style="white-space:pre-wrap;line-height:1.6">'+esc(terms||'No terms entered yet.')+'</div>',closeModal);document.getElementById('modalSave').style.display='none';
+}
+function restoreBillTerms(){
+  const history=db.settings?.customerBillTermsHistory||[];if(!history.length)return alert('No previous saved version is available.');
+  const last=history[history.length-1];if(!confirm('Restore the previous saved terms?'))return;
+  db.settings.customerBillTerms=last.terms||'';db.settings.customerBillTermsHistory=history.slice(0,-1);audit('UPDATE','Customer Bill Terms','global','current',last.terms||'');save();renderBillTerms();
+}
 function renderAudit(){const rows=[...db.audit].sort((a,b)=>b.at.localeCompare(a.at));shell('audit',`<div class="sectionhead"><div><h1>Activity / Audit Log</h1><div class="muted">Who created, updated, deleted or logged in.</div></div></div>${tableRows(rows.map(x=>({...x,_entity:'audit'})),[['Time',r=>new Date(r.at).toLocaleString('en-IN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})],['User',r=>`<b>${esc(r.userName)}</b>`],['Action',r=>r.action],['Section',r=>r.entity],['Record',r=>r.recordId],['Change',r=>r.before||r.after?`<button class="btn sm gray" onclick='showAudit(${JSON.stringify(r.id)})'>View</button>`:'—']],false)}`,'Activity Log')}
 function showAudit(id){const a=db.audit.find(x=>x.id===id);if(!a)return;modal('Audit Detail',`<div class="notice"><b>${esc(a.userName)}</b> • ${a.action} • ${a.entity}<br>${new Date(a.at).toLocaleString('en-IN')}</div><div class="two" style="margin-top:12px"><div class="card"><b>Before</b><pre style="white-space:pre-wrap;font-size:11px">${esc(JSON.stringify(a.before,null,2)||'—')}</pre></div><div class="card"><b>After</b><pre style="white-space:pre-wrap;font-size:11px">${esc(JSON.stringify(a.after,null,2)||'—')}</pre></div></div>`,closeModal);document.getElementById('modalSave').style.display='none'}
 function renderBackup(){shell('backup',`<div class="sectionhead"><div><h1>Online Sync & Backup</h1><div class="muted">Cloud sync + monthly Excel backup architecture.</div></div><span class="pill ${CLOUD_API?'green':'orange'}">${CLOUD_API?'Cloud API configured':'Cloud API not configured'}</span></div><div class="two"><div class="card"><h2>Cloud Sync</h2><p class="muted">All devices use the same central data when the production API is connected.</p><div class="notice">Status: <b>${esc(cloudState.status)}</b><br>Last sync: ${cloudState.lastSync?new Date(cloudState.lastSync).toLocaleString('en-IN'):'Not yet'}</div><button class="btn green" onclick="cloudSync().then(()=>render('backup'))">Sync Now</button></div><div class="card"><h2>Google Drive</h2><div class="notice"><b>Google Drive / Dairy Farm / YEAR / MONTH / Month.xlsx</b><br>Monthly Excel with Dashboard, Sales, Purchase, Expenses, Cash Flow, Profit & Loss and graphs.</div><p class="muted">Direct Drive upload requires Google OAuth/API credentials on the deployed server. This build keeps the integration point ready.</p><button class="btn green" onclick="exportDrivePack()">Prepare Monthly Backup</button></div></div>`,'Online Sync & Backup')}
@@ -804,7 +811,7 @@ else return alert('This record type is not editable in this prototype.');
 modal('Edit '+entity,body,()=>{let next={...item}; if(entity==='sales'){next.date=val('date');next.product=val('product');next.qty=num(val('qty'));next.amount=num(val('amount'));next.description=val('desc')} if(entity==='collections'){next.date=val('date');next.mode=val('mode');next.name=val('name');next.amount=num(val('amount'));next.paymentMode=val('pay')} if(entity==='expenses'){next.date=val('date');next.category=val('cat');next.amount=num(val('amount'));next.paymentMode=val('pay');next.description=val('desc')} if(entity==='milk'){next.date=val('date');next.vendor=val('vendor');next.cowLitres=num(val('cow'));next.cowRate=num(val('cowRate'));next.buffLitres=num(val('buff'));next.buffRate=num(val('buffRate'));next.paid=num(val('paid'));next.total=next.cowLitres*next.cowRate+next.buffLitres*next.buffRate;next.balance=next.total-next.paid} if(entity==='stockPurchases'){next.date=val('date');next.item=val('item');next.qty=num(val('qty'));next.rate=num(val('rate'));next.paid=num(val('paid'));next.vendor=val('vendor');next.total=next.qty*next.rate;next.balance=next.total-next.paid} Object.assign(item,next);audit('UPDATE',entity,item.id,old,item);save();closeModal();render(entity==='stockPurchases'?'stock':entity==='expenses'?'expenses':entity==='sales'?'sales':entity==='collections'?'collections':'milk')})}
 
 function deleteGeneric(entity,id){if(entity==='vendorPayments')return alert('Vendor payment history cannot be deleted from this screen.');if(!confirm('Delete this record? The action will be logged.'))return;const arr=db[entity]||[];const i=arr.findIndex(x=>x.id===id);if(i<0)return;const old=arr[i];arr.splice(i,1);recordDeletion(entity,id,old);audit('DELETE',entity,id,old,null);save();render(entity==='sales'?'sales':entity==='collections'?'collections':entity==='milk'?'milk':entity==='stockPurchases'||entity==='stockUsage'?'stock':entity==='expenses'?'expenses':entity==='customers'?'customers':'vendors')}
-function render(k){window.__durgaView=k;if(k==='dashboard')dashboard();else if(k==='sales')renderSales();else if(k==='collections')renderCollections();else if(k==='milk')renderMilk();else if(k==='stock')renderStock();else if(k==='expenses')renderExpenses();else if(k==='customers')renderCustomers();else if(k==='vendors')renderVendors();else if(k==='cash')renderCash();else if(k==='reports')renderReports();else if(k==='audit')renderAudit();else if(k==='backup')renderBackup();else if(k==='users')renderUsers()}
+function render(k){window.__durgaView=k;if(k==='dashboard')dashboard();else if(k==='sales')renderSales();else if(k==='collections')renderCollections();else if(k==='milk')renderMilk();else if(k==='stock')renderStock();else if(k==='expenses')renderExpenses();else if(k==='customers')renderCustomers();else if(k==='vendors')renderVendors();else if(k==='cash')renderCash();else if(k==='reports')renderReports();else if(k==='audit')renderAudit();else if(k==='backup')renderBackup();else if(k==='terms')renderBillTerms();else if(k==='users')renderUsers()}
 function zeroTwoLogin(){ portalChooser(); }
 async function doZeroTwoLogin(){
   await zeroTwoLoad();
