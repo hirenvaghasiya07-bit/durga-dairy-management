@@ -7,7 +7,8 @@ This package is prepared for Cloudflare Workers Static Assets + D1.
 - The app uses the same-origin `/api` endpoints.
 - Customer module remains unchanged and is intentionally not expanded.
 - Replace `database_id` in `wrangler.jsonc` after creating the D1 database.
-- Replace `SESSION_SECRET` with a strong secret before production.
+- API login issues random, expiring sessions stored as token hashes in the additive `session_tokens` table. Do not use static bearer tokens.
+- Demo users are not seeded in production unless `ALLOW_DEMO_SEED=true` is explicitly configured for an isolated test environment.
 
 ## Cloudflare setup
 1. In Cloudflare Dashboard choose Workers & Pages -> Create application -> Workers.
