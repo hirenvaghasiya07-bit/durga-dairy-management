@@ -218,13 +218,20 @@ async function cloudPull(){
 }
 async function manualSync(){
   if(!CLOUD_API||!db.currentUser)return alert('Cloud API or active login is unavailable. Local data remains saved on this device.');
-  cloudState={...cloudState,status:'syncing',error:null};render(window.__durgaView||'dashboard');
+  const view=window.__durgaView||'dashboard';
+  cloudState={...cloudState,status:'syncing',error:null};
   await cloudSync();
   if(cloudState.status==='online'){
     await cloudPull();
     if(cloudState.status==='online')alert('Cloud synchronization completed. The latest authoritative state has been pulled.');
     else alert('Cloud pull failed: '+(cloudState.error||'Unknown error')+'. Local data and pending operations are preserved.');
   }else alert('Cloud synchronization failed: '+(cloudState.error||'Unknown error')+'. Local data and pending operations are preserved.');
+  if(document.getElementById('modal'))return;
+  if(view==='customerLedger'&&window.__customerLedgerId)renderCustomerLedger(window.__customerLedgerId);
+  else if(view==='customerEntries'&&window.__customerLedgerId)editCustomerEntries(window.__customerLedgerId);
+  else if(view==='dailyMilk')renderCustomerDailyMilk(window.__customerDailyDate||iso());
+  else if(['dashboard','sales','milkPrices','collections','milk','stock','expenses','customers','vendors','cash','reports','audit','backup','terms','transfers','users'].includes(view))render(view);
+  else dashboard();
 }
 function scheduleCloudSync(){clearTimeout(window.__durgaSyncTimer);window.__durgaSyncTimer=setTimeout(cloudSync,500)}
 function startCloudRealtimeSync(){
