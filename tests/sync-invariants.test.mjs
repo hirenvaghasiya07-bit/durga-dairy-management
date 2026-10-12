@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeWorkspace, mergeBusiness, normalizeBusinessRecords } from '../worker.js';
+import { mergeWorkspace, mergeBusiness, normalizeBusinessRecords, scopeStateForRole, sanitizeIncomingForRole } from '../worker.js';
 
 function state(overrides = {}) {
   return {
@@ -107,4 +107,34 @@ test('identical legacy rows are preserved as distinct occurrences', () => {
   const normalized = normalizeBusinessRecords(state({ sales: [legacy, { ...legacy }] }), 'hiren', 'u_owner');
   assert.equal(normalized.sales.length, 2);
   assert.notEqual(normalized.sales[0].id, normalized.sales[1].id);
+});
+
+test('Family Member API scope excludes sales and customer ledgers', () => {
+  const scoped = scopeStateForRole(state({
+    sales: [{ id: 'sale-1', businessId: 'hiren', amount: 50 }],
+    expenses: [{ id: 'expense-1', businessId: 'hiren', amount: 20 }],
+    customers: [{ id: 'customer-1', name: 'Private Customer' }]
+  }), 'Family Member');
+  assert.equal(scoped.sales.length, 0);
+  assert.equal(scoped.customers.length, 0);
+  assert.equal(scoped.expenses.length, 1);
+});
+
+test('Staff cannot overwrite another users sale and new records are attributed server-side', () => {
+  const remote = state({ sales: [{ id: 'sale-owner', businessId: 'hiren', userId: 'u_owner', amount: 100 }] });
+  const incoming = state({ sales: [
+    { id: 'sale-owner', businessId: 'hiren', userId: 'u_staff', amount: 1 },
+    { id: 'sale-new', businessId: 'hiren', userId: 'spoofed-user', amount: 25 }
+  ] });
+  const safe = sanitizeIncomingForRole(incoming, remote, 'Staff', { id: 'u_staff', name: 'Dairy Staff', business: 'hiren' });
+  assert.equal(safe.sales.length, 1);
+  assert.equal(safe.sales[0].id, 'sale-new');
+  assert.equal(safe.sales[0].userId, 'u_staff');
+});
+
+test('audit records are append-only and existing entries cannot be edited', () => {
+  const remote = state({ audit: [{ id: 'audit-1', businessId: 'hiren', userId: 'u_owner', action: 'CREATE', entity: 'Sale' }] });
+  const merged = mergeBusiness(remote, state({ audit: [{ id: 'audit-1', businessId: 'hiren', userId: 'u_owner', action: 'DELETE', entity: 'Sale' }] }), {}, 'hiren', 'u_owner');
+  assert.equal(merged.audit.length, 1);
+  assert.equal(merged.audit[0].action, 'CREATE');
 });
