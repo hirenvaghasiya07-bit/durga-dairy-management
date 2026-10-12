@@ -15,17 +15,18 @@
   const moneyA=n=>money(num(n));
   const today=()=>iso();
   const hasSplitMilk=x=>!!(x&&['vendorCowMorning','vendorBuffaloMorning','vendorCowEvening','vendorBuffaloEvening'].some(k=>Object.prototype.hasOwnProperty.call(x,k)));
+  const legacyRateAt=date=>{const h=(a().purchaseRates||[]).filter(x=>String(x.date)<=String(date)).sort((x,y)=>String(x.date).localeCompare(String(y.date)));return h.length?num(h[h.length-1].rate):72;};
   const vq=(x,k)=>num(x&&x[k]);
   const vendorCowTotal=x=>vq(x,'vendorCowMorning')+vq(x,'vendorCowEvening');
   const vendorBuffaloTotal=x=>vq(x,'vendorBuffaloMorning')+vq(x,'vendorBuffaloEvening');
   const hirenCowTotal=x=>vq(x,'hirenCowMorning')+vq(x,'hirenCowEvening');
   const hirenBuffaloTotal=x=>vq(x,'hirenBuffaloMorning')+vq(x,'hirenBuffaloEvening');
   const purchaseTotal=x=>hasSplitMilk(x)?vendorCowTotal(x)+vendorBuffaloTotal(x):num(x.vendorMorning)+num(x.vendorEvening);
-  const purchaseAmt=x=>hasSplitMilk(x)?vendorCowTotal(x)*num(x.cowRate)+vendorBuffaloTotal(x)*num(x.buffaloRate):purchaseTotal(x)*num(x.rate||effectivePurchaseRate(x.date));
+  const purchaseAmt=x=>hasSplitMilk(x)?vendorCowTotal(x)*num(x.cowRate)+vendorBuffaloTotal(x)*num(x.buffaloRate):purchaseTotal(x)*(num(x.rate)||legacyRateAt(x.date));
   const akashQty=x=>hasSplitMilk(x)?Math.max(0,vq(x,'vendorCowMorning')-vq(x,'hirenCowMorning'))+Math.max(0,vq(x,'vendorBuffaloMorning')-vq(x,'hirenBuffaloMorning'))+Math.max(0,vq(x,'vendorCowEvening')-vq(x,'hirenCowEvening'))+Math.max(0,vq(x,'vendorBuffaloEvening')-vq(x,'hirenBuffaloEvening')):num(x.akashMorning)+num(x.akashEvening);
   const hirenQty=x=>hasSplitMilk(x)?hirenCowTotal(x)+hirenBuffaloTotal(x):0;
   const hirenAmt=x=>hasSplitMilk(x)?hirenCowTotal(x)*num(x.cowRate)+hirenBuffaloTotal(x)*num(x.buffaloRate):0;
-  const akashMilkCost=x=>hasSplitMilk(x)?(vendorCowTotal(x)-hirenCowTotal(x))*num(x.cowRate)+(vendorBuffaloTotal(x)-hirenBuffaloTotal(x))*num(x.buffaloRate):akashQty(x)*num(x.rate||effectivePurchaseRate(x.date));
+  const akashMilkCost=x=>hasSplitMilk(x)?(vendorCowTotal(x)-hirenCowTotal(x))*num(x.cowRate)+(vendorBuffaloTotal(x)-hirenBuffaloTotal(x))*num(x.buffaloRate):akashQty(x)*(num(x.rate)||legacyRateAt(x.date));
   const rateAt=(date)=>effectivePurchaseRate(date);
   const saleable=x=>num(x.actualQty)*(1+num(x.extraPercent)/100);
   const rateGroups=ss=>{const m=new Map();ss.forEach(x=>{const id=x.categoryId||('r'+num(x.rate)),name=x.categoryName||x.slabName||('₹'+num(x.rate)+' per litre');if(!m.has(id))m.set(id,{id,name});});return [...m.values()].sort((x,y)=>String(x.name).localeCompare(String(y.name)));};
@@ -178,7 +179,7 @@
   function renderAkashVendors(){
     const z=a(),vendors=[...z.vendors].sort((x,y)=>String(x.name).localeCompare(String(y.name)));
     const rows=vendors.map(v=>{const purchases=z.purchases.filter(p=>p.vendorId===v.id||(!p.vendorId&&String(p.vendor||'').toLowerCase()===String(v.name).toLowerCase())),total=sum(purchases,purchaseAmt),due=sum(purchases,p=>Math.max(0,purchaseAmt(p)-num(p.paid)));return {...v,_entity:'akashVendor',purchaseCount:purchases.length,total,due};});
-    const body='<div class="sectionhead"><div><h1>Vendors</h1><div class="muted">Akash milk suppliers. Select a vendor while adding Milk Purchase.</div></div><button class="btn green" onclick="akashVendorModal()">+ Add Vendor</button></div><div class="grid">'+metric('Total Vendors',vendors.length)+metric('Active Vendors',vendors.filter(v=>v.active!==false).length)+metric('Milk Purchase Payable',moneyA(rows.reduce((s,v)=>s+v.due,0)))+'</div><div class="card section">'+tableRows(rows,[['Vendor',v=>'<b>'+esc(v.name)+'</b>'],['Phone',v=>esc(v.phone||'—')],['Purchases',v=>v.purchaseCount],['Purchase Total',v=>moneyA(v.total)],['Balance',v=>moneyA(v.due)],['Status',v=>v.active===false?'Inactive':'Active'],['Actions',v=>'<button class="btn sm gray" data-id="'+v.id+'" onclick="akashVendorModal(this.dataset.id)">Edit</button> <button class="btn sm '+(v.active===false?'green':'red')+'" data-id="'+v.id+'" onclick="toggleAkashVendor(this.dataset.id)">'+(v.active===false?'Activate':'Deactivate')+'</button>']],false)+'</div>';
+    const body='<div class="sectionhead"><div><h1>Vendors</h1><div class="muted">Akash milk suppliers. Select a vendor while adding Milk Purchase.</div></div><button class="btn green" onclick="akashVendorModal()">+ Add Vendor</button></div><div class="grid">'+metric('Total Vendors',vendors.length)+metric('Active Vendors',vendors.filter(v=>v.active!==false).length)+metric('Milk Purchase Payable',moneyA(rows.reduce((s,v)=>s+v.due,0)))+'</div><div class="card section">'+tableRows(rows,[['Vendor',v=>'<b>'+esc(v.name)+'</b>'],['Phone',v=>esc(v.phone||'—')],['Cow ₹/L',v=>moneyA(vendorRate(v,today(),'cow'))],['Buffalo ₹/L',v=>moneyA(vendorRate(v,today(),'buffalo'))],['Purchases',v=>v.purchaseCount],['Purchase Total',v=>moneyA(v.total)],['Balance',v=>moneyA(v.due)],['Status',v=>v.active===false?'Inactive':'Active'],['Actions',v=>'<button class="btn sm gray" data-id="'+v.id+'" onclick="akashVendorModal(this.dataset.id)">Edit</button> <button class="btn sm '+(v.active===false?'green':'red')+'" data-id="'+v.id+'" onclick="toggleAkashVendor(this.dataset.id)">'+(v.active===false?'Activate':'Deactivate')+'</button>']],false)+'</div>';
     akashShell('vendors',body,'Vendors');
   }
   window.akashVendorModal=akashVendorModal;
