@@ -410,4 +410,4 @@ export default {
   }
 };
 
-export { mergeTombstones, addDeletionTombstones, mergeArrayById, normalizeBusinessRecords, mergeBusiness, mergeWorkspace, stableLegacyId, canonicalRecord };
+export { mergeTombstones, addDeletionTombstones, mergeArrayById, normalizeBusinessRecords, mergeBusiness, mergeWorkspace, stableLegacyId, canonicalRecord, rolePolicy, scopeStateForRole, sanitizeIncomingForRole };
