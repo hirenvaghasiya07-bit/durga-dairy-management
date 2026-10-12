@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeWorkspace, mergeBusiness } from '../worker.js';
+import { mergeWorkspace, mergeBusiness, normalizeBusinessRecords } from '../worker.js';
 
 function state(overrides = {}) {
   return {
@@ -90,4 +90,21 @@ test('internal transfers and customer opening balances remain in Hiren partition
   assert.equal(merged.customerOpeningBalances.length, 1);
   const akashAttempt = mergeWorkspace(merged, state({ settings: { __businesses: { akash: state({ internalTransfers: [{ id: 'wrong-transfer', businessId: 'akash', amount: 5 }] }) } } }), 'akash', {}, 'u_akash');
   assert.equal(akashAttempt.settings.__businesses.akash.internalTransfers.length, 0);
+});
+
+test('legacy records without IDs receive stable IDs and do not duplicate on retries', () => {
+  const legacy = { amount: 125, date: '2026-09-01', product: 'Milk' };
+  const remote = state({ sales: [legacy] });
+  const incoming = state({ sales: [{ amount: 125, date: '2026-09-01', product: 'Milk' }] });
+  const merged = mergeBusiness(remote, incoming, {}, 'hiren', 'u_owner');
+  assert.equal(merged.sales.length, 1);
+  assert.match(merged.sales[0].id, /^legacy_sales_/);
+  assert.equal(merged.sales[0].businessId, 'hiren');
+});
+
+test('identical legacy rows are preserved as distinct occurrences', () => {
+  const legacy = { amount: 125, date: '2026-09-01', product: 'Milk' };
+  const normalized = normalizeBusinessRecords(state({ sales: [legacy, { ...legacy }] }), 'hiren', 'u_owner');
+  assert.equal(normalized.sales.length, 2);
+  assert.notEqual(normalized.sales[0].id, normalized.sales[1].id);
 });
