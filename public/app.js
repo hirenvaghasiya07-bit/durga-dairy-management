@@ -22,6 +22,30 @@ function newerRecord(a,b){
   if(ta&&!tb)return a;
   return a;
 }
+function canonicalRecord(value){
+  if(Array.isArray(value))return '['+value.map(canonicalRecord).join(',')+']';
+  if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonicalRecord(value[k])).join(',')+'}';
+  return JSON.stringify(value);
+}
+function stableLegacyId(entity,record,occurrence=0){
+  const raw=canonicalRecord(record);let hash=2166136261;
+  for(let i=0;i<raw.length;i++){hash^=raw.charCodeAt(i);hash=Math.imul(hash,16777619)}
+  return 'legacy_'+entity+'_'+(hash>>>0).toString(36)+'_'+occurrence;
+}
+function ensureStableRecordIds(state){
+  const out=cloneCloud(state||{});
+  for(const key of SYNC_ARRAYS){
+    if(!Array.isArray(out[key]))continue;
+    const seen=new Map();
+    out[key]=out[key].map(record=>{
+      if(!record||typeof record!=='object'||record.id!=null)return record;
+      const signature=canonicalRecord(record),occurrence=seen.get(signature)||0;
+      seen.set(signature,occurrence+1);
+      return {...record,id:stableLegacyId(key,record,occurrence),legacyIdAssigned:true};
+    });
+  }
+  return out;
+}
 function tombstoneStamp(v){return typeof v==='string'?v:(v?.deletedAt||v?.deleted_at||v?.at||'')}
 function mergeTombstones(...sources){
   const out={};
@@ -47,12 +71,13 @@ function pendingDeletionPayload(state=db){
 }
 function mergeCloudDB(local,remote){
   const base=structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB));
-  const out=Object.assign(base,remote||{},local||{});
-  out.settings={...(remote?.settings||{}),...(local?.settings||{})};
-  out.__tombstones=mergeTombstones(remote?.__tombstones,local?.__tombstones);
+  const localSafe=ensureStableRecordIds(local||{}),remoteSafe=ensureStableRecordIds(remote||{});
+  const out=Object.assign(base,remoteSafe,localSafe);
+  out.settings={...(remoteSafe?.settings||{}),...(localSafe?.settings||{})};
+  out.__tombstones=mergeTombstones(remoteSafe?.__tombstones,localSafe?.__tombstones);
   for(const key of SYNC_ARRAYS){
-    const lm=Array.isArray(local?.[key])?local[key]:[];
-    const rm=Array.isArray(remote?.[key])?remote[key]:[];
+    const lm=Array.isArray(localSafe?.[key])?localSafe[key]:[];
+    const rm=Array.isArray(remoteSafe?.[key])?remoteSafe[key]:[];
     const map=new Map();
     for(const x of rm)if(x?.id!=null)map.set(String(x.id),x);
     for(const x of lm)if(x?.id!=null){const id=String(x.id);map.set(id,map.has(id)?newerRecord(x,map.get(id)):x);}
@@ -224,7 +249,7 @@ function getSaleRate(key){ensureSalesConfig();return num(db.settings.salePrices[
 function setSaleRate(key,rate){ensureSalesConfig();db.settings.salePrices[key]=num(rate);save()}
 function customerRateFor(c,key,date){if(!c)return getSaleRate(key);const h=(c.priceHistory||[]).filter(x=>x.productKey===key||(!x.productKey&&c.saleKey===key)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));let rate=num(c.rate);for(const x of h){if(String(x.date)<=String(date))rate=num(x.rate)}return rate||getSaleRate(key)}
 function addCustomerPriceHistory(c,key,date,rate){c.priceHistory=c.priceHistory||[];c.priceHistory.push({id:uid(),productKey:key,date,rate:num(rate)});c.priceHistory.sort((a,b)=>String(a.date).localeCompare(String(b.date)))}
-function save(){ensureSalesConfig();db.__tombstones=db.__tombstones||{};db.businessId=BUSINESS_ID||db.businessId||'hiren';localStorage.setItem(KEY,JSON.stringify(db));if(!isZeroTwo())localStorage.setItem(pendingSyncKey(),JSON.stringify({queuedAt:new Date().toISOString(),businessId:BUSINESS_ID}));scheduleCloudSync()}
+function save(){ensureSalesConfig();db=ensureStableRecordIds(db);db.__tombstones=db.__tombstones||{};db.businessId=BUSINESS_ID||db.businessId||'hiren';localStorage.setItem(KEY,JSON.stringify(db));if(!isZeroTwo())localStorage.setItem(pendingSyncKey(),JSON.stringify({queuedAt:new Date().toISOString(),businessId:BUSINESS_ID}));scheduleCloudSync()}
 function user(){return db.users.find(u=>u.id===db.currentUser)}
 function audit(action,entity,recordId,before=null,after=null){db.audit.push({id:uid(),at:new Date().toISOString(),userId:user()?.id||'system',userName:user()?.name||'System',action,entity,recordId,before,after});save()}
 function allowed(role,feature){if(role==='Owner'||role==='Full Access Member')return true;if(role==='Manager')return !['users','cashSettings'].includes(feature);if(role==='Family Member')return ['expenses'].includes(feature);if(role==='Staff')return ['sales'].includes(feature);return false}
