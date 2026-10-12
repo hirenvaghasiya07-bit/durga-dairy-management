@@ -73,6 +73,7 @@ async function ensureSeed(env){
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS session_tokens(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,created_at TEXT NOT NULL,expires_at TEXT NOT NULL,revoked_at TEXT)").run();
   const r=await env.DB.prepare("SELECT COUNT(*) AS n FROM users").first();
   if(Number(r?.n||0)>0)return;
+  if(env.ALLOW_DEMO_SEED!=="true")return;
   const defaults=[
     ["u_owner","Hiren","owner@durga.local","Owner","1234"],
     ["u_brother","Brother","brother@durga.local","Full Access Member","3333"],
