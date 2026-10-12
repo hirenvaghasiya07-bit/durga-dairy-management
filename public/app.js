@@ -11,7 +11,7 @@ function portalChooser(){document.getElementById('root').innerHTML='<div class="
 const CLOUD_API=location.hostname==='durga-dairy-live.hiren-vaghasiya07.workers.dev'?'https://durga-dairy-live-api.hiren-vaghasiya07.workers.dev':((window.DURGA_CONFIG&&window.DURGA_CONFIG.apiBase)||'');
 const CLOUD_SYNC_SCHEMA='2026-10-05-v5';
 let cloudState={status:CLOUD_API?'connecting':'local',lastSync:null,error:null};
-const SYNC_ARRAYS=['users','prices','sales','collections','milk','stockPurchases','stockUsage','expenses','customers','vendors','vendorPayments','cashChecks','audit','customerSales','customerPayments','customerBills','customerOpeningBalances','internalTransfers','milkPriceVarieties'];
+const SYNC_ARRAYS=['users','prices','sales','collections','milk','stockPurchases','stockUsage','expenses','customers','vendors','vendorPayments','cashChecks','cashOpenings','audit','customerSales','customerPayments','customerBills','customerOpeningBalances','internalTransfers','milkPriceVarieties'];
 
 function cloneCloud(v){return v==null?v:JSON.parse(JSON.stringify(v))}
 function recordTime(x){return x?.updatedAt||x?.updated_at||x?.createdAt||x?.created_at||''}
