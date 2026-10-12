@@ -417,9 +417,10 @@ function saleAmountChanged(){const q=num(val('qty')),r=num(val('rate')),a=docume
 function addCollection(){
   const customers=[...(db.customers||[])].sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   const customerOptions=customers.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
+  const collectionModeOptions=isAkash()?'<option>Bulk Collection</option>':'<option>Customer-wise</option><option>Bulk Collection</option>';
   modal('Bill Collection',`<div class="formgrid">
     <div class="field"><label>Date</label><input id="date" type="date" value="${iso()}"></div>
-    <div class="field"><label>Mode</label><select id="mode" onchange="toggleCollectionCustomer()"><option>Customer-wise</option><option>Bulk Collection</option></select></div>
+    <div class="field"><label>Mode</label><select id="mode" onchange="toggleCollectionCustomer()">${collectionModeOptions}</select></div>
     <div class="field"><label>Customer</label><select id="customerId" onchange="collectionCustomerChanged()"><option value="">Select Customer</option>${customerOptions}</select></div>
     <div class="field"><label id="nameLabel">Customer</label><input id="name" placeholder="Select customer"></div>
     <div class="field"><label>Amount ₹</label><input id="amount" type="number" oninput="collectionAmountChanged()"><div id="collectionBalance" class="muted" style="margin-top:6px"></div></div>
