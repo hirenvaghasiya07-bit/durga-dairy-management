@@ -174,6 +174,29 @@ function normalizeBusinessRecords(incoming,business,actor){
   }
   return safe;
 }
+function normalizeAkashV2(source,business){
+  const v=clone(source||{});
+  for(const key of ["purchases","sales","collections","slabs","vendors","purchaseRates","expenses"]){
+    if(!Array.isArray(v[key]))continue;
+    const seen=new Map();
+    v[key]=v[key].map(record=>{
+      if(!record||typeof record!=="object")return record;
+      let x={...record};
+      if(x.id==null){const signature=canonicalRecord(x),occurrence=seen.get(signature)||0;seen.set(signature,occurrence+1);x.id=stableLegacyId("akashV2_"+key,x,occurrence);x.legacyIdAssigned=true;}
+      const existing=String(x.businessId||"").toLowerCase();
+      if(existing&&existing!==business){const e=new Error("Akash V2 record "+String(x.id)+" belongs to "+existing+" and cannot be synced into "+business+".");e.code="BUSINESS_OWNERSHIP_MISMATCH";throw e;}
+      return {...x,businessId:business};
+    });
+  }
+  return v;
+}
+function mergeAkashV2(remoteSettings,incomingSettings,business){
+  const remote=normalizeAkashV2(remoteSettings?.akashV2||{},business),incoming=normalizeAkashV2(incomingSettings?.akashV2||{},business);
+  const tomb=mergeTombstones(remote.__tomb,incoming.__tomb),out={...remote,...incoming};
+  for(const key of ["purchases","sales","collections","slabs","vendors","purchaseRates","expenses"])out[key]=mergeArrayById(remote[key],incoming[key],tomb,key);
+  out.__tomb=tomb;
+  return out;
+}
 function mergeBusiness(remote,incoming,deleted={},business="hiren",actor="authorized-user"){
   const safeRemote=normalizeBusinessRecords(remote||emptyState(),business,actor);
   const out=clone(safeRemote||emptyState());
@@ -194,6 +217,10 @@ function mergeBusiness(remote,incoming,deleted={},business="hiren",actor="author
   }
   out.users=mergeArrayById(safeRemote?.users,safeIncoming?.users,tombstones,"users");
   out.settings={...(safeRemote?.settings||{}),...(safeIncoming?.settings||{})};
+  if(business==="akash"){
+    if(safeRemote?.settings?.akashV2||safeIncoming?.settings?.akashV2)out.settings.akashV2=mergeAkashV2(safeRemote?.settings,safeIncoming?.settings,"akash");
+  }else if(safeRemote?.settings?.akashV2)out.settings.akashV2=clone(safeRemote.settings.akashV2);
+  else delete out.settings.akashV2;
   out.currentUser=null;
   out.version=Math.max(Number(safeRemote?.version||0),Number(safeIncoming?.version||0),6);
   return out;
@@ -410,4 +437,4 @@ export default {
   }
 };
 
-export { mergeTombstones, addDeletionTombstones, mergeArrayById, normalizeBusinessRecords, mergeBusiness, mergeWorkspace, stableLegacyId, canonicalRecord, rolePolicy, scopeStateForRole, sanitizeIncomingForRole };
+export { mergeTombstones, addDeletionTombstones, mergeArrayById, normalizeBusinessRecords, mergeBusiness, mergeWorkspace, stableLegacyId, canonicalRecord, normalizeAkashV2, mergeAkashV2, rolePolicy, scopeStateForRole, sanitizeIncomingForRole };
