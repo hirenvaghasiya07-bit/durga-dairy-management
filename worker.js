@@ -212,8 +212,18 @@ export default {
         if(!u)return json({error:"Unauthorized"},401,req);
         const session=env.DB.withSession("first-primary");
         const row=await session.prepare("SELECT state_json,updated_at FROM workspace_state WHERE workspace_id=?").bind("durga-dairy").first();
-        const db=row?.state_json?JSON.parse(row.state_json):emptyState();
-        return json({ok:true,db,updatedAt:row?.updated_at||null,syncVersion:5},200,req);
+        const full=row?.state_json?JSON.parse(row.state_json):emptyState();
+        const requested=String(url.searchParams.get("business")||"hiren").toLowerCase();
+        const business=requested==="akash"?"akash":"hiren";
+        if((u.id==="u_akash"&&business!=="akash")||(u.id!=="u_akash"&&business!=="hiren"))return json({error:"Business access denied"},403,req);
+        let db;
+        if(business==="akash"){
+          const akash=full?.settings?.__businesses?.akash||emptyState();
+          db={...emptyState(),settings:{__businesses:{akash}}};
+        }else{
+          db=clone(full);db.settings={...(db.settings||{})};delete db.settings.__businesses;
+        }
+        return json({ok:true,db,updatedAt:row?.updated_at||null,syncVersion:6,business},200,req);
       }
 
       if(url.pathname==="/api/sync"&&req.method==="POST"){
