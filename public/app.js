@@ -85,12 +85,12 @@ function syncSchemaKey(){return KEY+'::cloud-schema'}
 function cloudSchemaReady(){return localStorage.getItem(syncSchemaKey())===CLOUD_SYNC_SCHEMA}
 function setCloudSchema(){localStorage.setItem(syncSchemaKey(),CLOUD_SYNC_SCHEMA)}
 async function cloudStateFetch(base,token){
-  const r=await fetch(base+'/api/state?ts='+Date.now(),{method:'GET',headers:{'Authorization':'Bearer '+token,'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
+  const r=await fetch(base+'/api/state?ts='+Date.now()+'&business='+encodeURIComponent(BUSINESS_ID==='akash'?'akash':'hiren'),{method:'GET',headers:{'Authorization':'Bearer '+token,'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
   if(!r.ok)throw new Error('Cloud read failed ('+r.status+')');
   return await r.json();
 }
 async function cloudSync(){
-  if(!CLOUD_API||!db.currentUser)return;
+  if(!CLOUD_API||!db.currentUser||isZeroTwo())return;
   try{
     cloudState.status='syncing';
     const base=CLOUD_API.replace(/\/$/,'');
@@ -153,7 +153,7 @@ async function cloudSync(){
   }
 }
 async function cloudPull(){
-  if(!CLOUD_API||!db.currentUser)return false;
+  if(!CLOUD_API||!db.currentUser||isZeroTwo())return false;
   try{
     const base=CLOUD_API.replace(/\/$/,'');
     const token=localStorage.getItem('durga-token')||'';
@@ -219,12 +219,11 @@ function audit(action,entity,recordId,before=null,after=null){db.audit.push({id:
 function allowed(role,feature){if(role==='Owner'||role==='Full Access Member')return true;if(role==='Manager')return !['users','cashSettings'].includes(feature);if(role==='Family Member')return ['expenses'].includes(feature);if(role==='Staff')return ['sales'].includes(feature);return false}
 async function init(){
   if(!BUSINESS_ID){portalChooser();return;}
+  if(!db.currentUser){login();return;}
   if(isZeroTwo()){
-    // All is a direct read-only combined view. No login is required.
     await zeroTwoLoad();
     return;
   }
-  if(!db.currentUser){login();return;}
   if(CLOUD_API){
     await cloudSync();
     render('dashboard');
@@ -233,7 +232,7 @@ async function init(){
 }
 function login(){const options=db.users.filter(u=>u.active).map(u=>'<option value="'+u.id+'">'+esc(u.name)+' • '+esc(u.role)+'</option>').join('');document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy • '+businessName()+'</h1><p>Online Management System</p><div class="notice">Sign in with your own account. Every entry is recorded with the member name and time.</div><div class="field"><label>Login</label><select id="loginUser">'+options+'</select></div><div class="field"><label>Password / PIN</label><input id="loginPin" type="password" autocomplete="current-password" placeholder="Password"></div><button class="btn" style="width:100%;margin-top:16px" onclick="doLogin()">Login</button><button class="linkbtn" onclick="forgotPassword()">Forgot Password?</button><p class="small">First-run demo: Hiren 1234 • Brother 3333 • Family 1111 • Staff 2222</p></div></div>'}
 function forgotPassword(){modal('Forgot Password','<p class="muted">Enter your account email. In production this will send a secure reset link.</p><div class="field"><label>Email</label><input id="resetEmail" type="email" placeholder="you@example.com"></div>',async()=>{const email=val('resetEmail');if(!email)return alert('Email required.');if(CLOUD_API){try{const r=await fetch(CLOUD_API.replace(/\/$/, '')+'/api/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});alert(r.ok?'If the account exists, a reset link has been sent.':'Reset request failed.')}catch(e){alert('Reset service unavailable.')}}else alert('Password reset is ready for cloud deployment; connect the online API to send the secure reset link.');closeModal()})}
-async function doLogin(){const id=document.getElementById('loginUser').value,p=document.getElementById('loginPin').value,u=db.users.find(x=>x.id===id);if(!u||u.pin!==p)return alert('Wrong password.');if(CLOUD_API){try{const r=await fetch(CLOUD_API.replace(/\/$/, '')+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:u.email,password:p,workspaceId:'durga-dairy-'+BUSINESS_ID})});if(r.ok){const j=await r.json();localStorage.setItem('durga-token',j.token||'')}}catch(e){cloudState={status:'offline',error:e.message}}}db.currentUser=id;save();audit('LOGIN','session',id,null,{name:u.name});render('dashboard');cloudSync()}
+async function doLogin(){const id=document.getElementById('loginUser').value,p=document.getElementById('loginPin').value,u=db.users.find(x=>x.id===id);if(!u||u.pin!==p)return alert('Wrong password.');if(CLOUD_API){try{const r=await fetch(CLOUD_API.replace(/\/$/, '')+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:u.email,password:p,workspaceId:'durga-dairy-'+BUSINESS_ID})});if(r.ok){const j=await r.json();localStorage.setItem('durga-token',j.token||'')}}catch(e){cloudState={status:'offline',error:e.message}}}db.currentUser=id;if(isZeroTwo()){save();zeroTwoLoad();return;}save();audit('LOGIN','session',id,null,{name:u.name});render('dashboard');cloudSync()}
 function logout(){
   const oldUser=db.currentUser;
   db.currentUser=null;
@@ -868,7 +867,8 @@ async function zeroTwoLoad(){
     const url=(location.hostname==='durga-dairy-live.hiren-vaghasiya07.workers.dev'
       ? '/api/zero-two-state'
       : (CLOUD_API.replace(/\/$/,'')+'/api/zero-two-state'))+'?ts='+Date.now();
-    const r=await fetch(url,{method:'GET',headers:{'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
+    const token=localStorage.getItem('durga-token')||'';
+    const r=await fetch(url,{method:'GET',headers:{'Accept':'application/json','Cache-Control':'no-cache','Authorization':'Bearer '+token},cache:'no-store'});
     const text=await r.text();
     let j=null;
     try{j=JSON.parse(text)}catch(e){
