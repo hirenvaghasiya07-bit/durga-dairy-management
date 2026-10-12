@@ -75,13 +75,19 @@ async function cloudSync(){
     const state=await cloudStateFetch(base,token);
     const remote=state.db||null;
 
-    // First run of this rebuild: cloud is authoritative. This intentionally
-    // removes old test data cached on phones/desktops instead of uploading it again.
+    // First-run migration must preserve device-only records. Merge by stable ID,
+    // keep the current session, then let the API perform an idempotent cloud merge.
+    // Never replace a non-empty offline cache just because this device lacks a schema marker.
     if(!cloudSchemaReady()){
-      replaceFromCloud(remote);
-      setCloudSchema();
-      cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
-      return;
+      const currentUser=db.currentUser;
+      if(remote){
+        const remoteBusiness=cloudBusiness(remote);
+        if(remoteBusiness) db=mergeCloudDB(db,remoteBusiness);
+        db.currentUser=currentUser;
+        db.businessId=BUSINESS_ID;
+        localStorage.setItem(KEY,JSON.stringify(db));
+      }
+      window.__durgaMigrationReviewRequired=true;
     }
 
     const currentUser=db.currentUser;
