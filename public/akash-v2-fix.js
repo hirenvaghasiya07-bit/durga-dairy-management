@@ -29,6 +29,14 @@ window.akExpRemoveCategory=function(name){
   db.settings.akashV2.expenseCategories=(db.settings.akashV2.expenseCategories||[]).filter(function(x){return x!==name});
   closeModal();save();window.akExpManageCategories();
 };
+window.addExpense=function(){
+  modal('Add Expense',formHtml(null),function(){
+    var r=readForm();
+    if(!r.date||!r.amount||r.amount<=0)return alert('Select a date and enter an amount greater than zero.');
+    var rec={id:uid(),date:r.date,category:r.category,amount:r.amount,paymentMode:r.paymentMode,description:r.description,businessId:'akash',userId:user()?.id||'u_akash',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    AL().push(rec);audit('CREATE','Expense',rec.id,null,rec);save();closeModal();render('expenses');
+  });
+};
 window.akExpEdit=function(id){
   var L=AL(),i=L.findIndex(function(x){return x.id===id});if(i<0)return;
   var old=JSON.parse(JSON.stringify(L[i]));
@@ -42,25 +50,27 @@ window.akExpDel=function(id){
   var L=AL(),i=L.findIndex(function(x){return x.id===id});if(i<0)return;
   var old=L.splice(i,1)[0];db.settings.akashV2.__tomb=db.settings.akashV2.__tomb||{};db.settings.akashV2.__tomb.expenses=db.settings.akashV2.__tomb.expenses||{};db.settings.akashV2.__tomb.expenses[String(id)]={id:String(id),deletedAt:new Date().toISOString(),businessId:'akash',userId:'u_akash'};audit('DELETE','Expense',id,old,null);save();render('expenses');
 };
+function toggleAkExpenseDate(date){window.__akExpenseOpenDates=window.__akExpenseOpenDates||{};window.__akExpenseOpenDates[date]=!window.__akExpenseOpenDates[date];expRender(window.__akExpenseMode||'all',window.__akExpenseValue||'')}
 function expRender(mode,value){
-  mode=mode||'all';value=value||'';
+  mode=mode||'all';value=value||'';window.__akExpenseMode=mode;window.__akExpenseValue=value;
   var sel=document.getElementById('expenseCategory'),cat=sel?sel.value:'all';
-  var rows=AL().filter(function(x){return filterDate(x.date,mode,value)}).sort(function(a,b){return String(a.date).localeCompare(String(b.date))});
+  var rows=AL().filter(function(x){return filterDate(x.date,mode,value)}).sort(function(a,b){return String(b.date).localeCompare(String(a.date))});
   if(cat!=='all')rows=rows.filter(function(x){return x.category===cat});
-  var total=rows.reduce(function(s,x){return s+n(x.amount)},0);
-  var cols=[
-    ['Date',function(r){return fmtDate(r.date)}],
-    ['Category',function(r){return esc(r.category||'')}],
-    ['Amount',function(r){return money(r.amount)}],
-    ['Description',function(r){return esc(r.description||'')}],
-    ['Payment',function(r){return esc(r.paymentMode||'')}],
-    ['Action',function(r){return '<button class="btn sm gray" data-id="'+r.id+'" onclick="akExpEdit(this.dataset.id)">Edit</button> <button class="btn sm red" data-id="'+r.id+'" onclick="akExpDel(this.dataset.id)">Delete</button>'}]
-  ];
+  var total=rows.reduce(function(s,x){return s+n(x.amount)},0),byDate={};
+  rows.forEach(function(x){if(x.date)(byDate[x.date]=byDate[x.date]||[]).push(x)});
+  var dates=Object.keys(byDate).sort(function(a,b){return b.localeCompare(a)});
+  var grouped=dates.map(function(date){
+    var list=byDate[date],dayTotal=list.reduce(function(s,x){return s+n(x.amount)},0),open=!!window.__akExpenseOpenDates?.[date],byCat={};
+    list.forEach(function(x){var c=x.category||'Uncategorized';byCat[c]=(byCat[c]||0)+n(x.amount)});
+    var breakdown=Object.keys(byCat).sort().map(function(c){return '<tr><td>'+esc(c)+'</td><td>'+money(byCat[c])+'</td></tr>'}).join('');
+    var details=list.map(function(x){return '<tr><td>'+esc(x.category||'')+'</td><td>'+money(x.amount)+'</td><td>'+esc(x.description||'')+'</td><td>'+esc(x.paymentMode||'')+'</td><td><button class="btn sm gray" data-id="'+x.id+'" onclick="akExpEdit(this.dataset.id)">Edit</button> <button class="btn sm red" data-id="'+x.id+'" onclick="akExpDel(this.dataset.id)">Delete</button></td></tr>'}).join('');
+    return '<div class="card section" style="padding:0;overflow:hidden"><button type="button" data-date="'+date+'" onclick="toggleAkExpenseDate(this.dataset.date)" style="width:100%;display:flex;justify-content:space-between;align-items:center;text-align:left;border:0;background:transparent;padding:14px;cursor:pointer"><span><b>'+fmtDate(date)+'</b><span class="muted" style="display:block">'+list.length+' expense entries</span></span><span style="text-align:right"><b>'+money(dayTotal)+'</b><span class="muted" style="display:block">'+(open?'Hide details':'View details')+'</span></span></button><div style="display:'+(open?'block':'none')+';padding:12px;border-top:1px solid var(--line)"><h3>Expense history • '+fmtDate(date)+'</h3><div class="tablewrap"><table class="table"><thead><tr><th>Category</th><th>Category Total</th></tr></thead><tbody>'+breakdown+'<tr><td><b>Day Total</b></td><td><b>'+money(dayTotal)+'</b></td></tr></tbody></table></div><div class="tablewrap"><table class="table"><thead><tr><th>Category</th><th>Amount</th><th>Description</th><th>Payment</th><th>Actions</th></tr></thead><tbody>'+details+'</tbody></table></div><div style="text-align:right"><b>Date Total: '+money(dayTotal)+'</b></div></div></div>';
+  }).join('');
   shell('expenses',
     dateFilters('expenseFilter','expenses')
-    +'<div class="sectionhead"><div><h1>Expenses</h1><div class="muted">Akash only. Filter by date and category. Records are oldest to newest.</div></div><div class="toolbar"><button class="btn red" onclick="addExpense()">+ Add Expense</button><button class="btn gray" onclick="akExpManageCategories()">Manage Categories</button></div></div>'
+    +'<div class="sectionhead"><div><h1>Expenses</h1><div class="muted">Akash expenses grouped by date. Open a date to edit or delete individual entries.</div></div><div class="toolbar"><button class="btn red" onclick="addExpense()">+ Add Expense</button><button class="btn gray" onclick="akExpManageCategories()">Manage Categories</button></div></div>'
     +'<div class="card section"><div class="toolbar"><label>Category</label><select id="expenseCategory" onchange="renderExpenses()"><option value="all" '+(cat==='all'?'selected':'')+'>All Categories</option>'+opts(CATS(),cat)+'</select><span class="pill green">Total: '+money(total)+'</span></div></div>'
-    +tableRows(rows,cols,false)
+    +'<div class="card section"><h2>Expense Entries • Date-wise</h2>'+grouped+(dates.length?'':'<div class="empty">No expenses for this period.</div>')+'</div>'
     +'<div class="card" style="margin-top:12px;text-align:right"><b>TOTAL: '+money(total)+'</b></div>',
     'Expenses');
 }
