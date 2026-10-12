@@ -80,4 +80,82 @@
     item=item||{id:uid(),date:today(),vendorMorning:0,vendorEvening:0,akashMorning:0,akashEvening:0,paid:0};
     const edit=!!item._edit;
     const rate=effectivePurchaseRate(item.date);
-    modal((edit?'Edit':'Add')+' Bill Purchase','<div class="notice">Main Vendor total is Akash\'s purchase. Akash quantity is the quantity allocated to Akash. Your dairy quantity remains separate.</div><div class="formgrid" style="margin-top: --- TRUNCATED --- 29,474 chars
+    modal((edit?'Edit':'Add')+' Bill Purchase','<div class="notice">Main Vendor total is Akash\'s purchase. Akash quantity is the quantity allocated to Akash. Your dairy quantity remains separate.</div><div class="formgrid" style="margin-top:12px"><div class="field"><label>Date</label><input id="apDate" type="date" value="'+item.date+'"></div><div class="field"><label>Purchase Rate ₹/L</label><input id="apRate" type="number" step="0.01" value="'+rate+'"></div><div class="field"><label>Main Vendor • Morning L</label><input id="apVM" type="number" step="0.01" value="'+num(item.vendorMorning)+'"></div><div class="field"><label>Main Vendor • Evening L</label><input id="apVE" type="number" step="0.01" value="'+num(item.vendorEvening)+'"></div><div class="field"><label>Akash • Morning L</label><input id="apAM" type="number" step="0.01" value="'+num(item.akashMorning)+'"></div><div class="field"><label>Akash • Evening L</label><input id="apAE" type="number" step="0.01" value="'+num(item.akashEvening)+'"></div><div class="field"><label>Paid ₹</label><input id="apPaid" type="number" step="0.01" value="'+num(item.paid)+'"></div><div class="field"><label>Vendor / Note</label><input id="apNote" value="'+esc(item.note||'Main Vendor')+'"></div></div><div class="notice" style="margin-top:12px">Main Vendor Qty: <b id="apTotal">0</b> L • Akash Qty: <b id="apAkash">0</b> L • Total ₹: <b id="apAmount">₹0</b> • Balance: <b id="apBal">₹0</b></div>',()=>{
+      const next={...item}; next.date=val('apDate');next.rate=effectivePurchaseRate(next.date); next.vendorMorning=num(val('apVM'));next.vendorEvening=num(val('apVE'));next.akashMorning=num(val('apAM'));next.akashEvening=num(val('apAE'));next.paid=num(val('apPaid'));next.note=val('apNote');next.total=purchaseTotal(next)*next.rate;next.akashQty=akashQty(next);next.akashAmount=next.akashQty*next.rate;delete next._edit;
+      if(edit){const i=a().purchases.findIndex(x=>x.id===next.id);if(i>=0)a().purchases[i]=next}else a().purchases.push(next);
+      audit(edit?'UPDATE':'CREATE','akashPurchase',next.id,null,next);saveA();closeModal();render('milk');
+    });
+    setTimeout(()=>{['apDate','apVM','apVE','apAM','apAE','apPaid'].forEach(id=>document.getElementById(id)?.addEventListener('input',()=>{const d=val('apDate'),r=effectivePurchaseRate(d),t=num(val('apVM'))+num(val('apVE')),q=num(val('apAM'))+num(val('apAE'));document.getElementById('apTotal').textContent=q? (t.toFixed(2)):'0';document.getElementById('apAkash').textContent=q.toFixed(2);document.getElementById('apAmount').textContent=moneyA(t*r);document.getElementById('apBal').textContent=moneyA(t*r-num(val('apPaid')))}));},50);
+  }
+
+  function renderAkashMilk(){
+    const z=a(), rows=[...z.purchases].sort((x,y)=>String(y.date).localeCompare(String(x.date)));
+    const total=sum(rows,purchaseTotal), own=sum(rows,akashQty), paid=sum(rows,x=>x.paid), due=sum(rows,x=>Math.max(0,purchaseAmt(x)-num(x.paid)))+(z.vendors||[]).reduce((s,v)=>s+Math.max(0,num(v.openingBalance)-num(v.openingPaid)),0);
+    const rateRows=purchaseRateHistory();
+    const body='<div class="sectionhead"><div><h1>Milk Purchase</h1><div class="muted">Main Vendor purchase • Morning/Evening • Akash allocation</div></div><div class="toolbar"><button class="btn green" onclick="akashPurchaseModal()">+ Add Purchase</button><button class="btn gray" onclick="akashRateModal()">Purchase Rate History</button></div></div><div class="grid">'+metric('Main Vendor Purchase',total.toFixed(2)+' L')+metric('Akash Purchase',own.toFixed(2)+' L')+metric('Paid',moneyA(paid))+metric('Total Balance to Pay',moneyA(due),'Vendor payable')+'</div><div class="card section">'+tableRows(rows.map(x=>({...x,id:x.id,_entity:'akashPurchase'})),[['Date',x=>fmtDate(x.date)],['Vendor Morning',x=>num(x.vendorMorning).toFixed(2)+' L'],['Vendor Evening',x=>num(x.vendorEvening).toFixed(2)+' L'],['Total',x=>purchaseTotal(x).toFixed(2)+' L'],['Akash Qty',x=>akashQty(x).toFixed(2)+' L'],['Rate',x=>moneyA(x.rate||effectivePurchaseRate(x.date))],['Amount',x=>moneyA(purchaseTotal(x)*(x.rate||effectivePurchaseRate(x.date)))],['Paid',x=>moneyA(x.paid)],['Balance',x=>moneyA(Math.max(0,purchaseTotal(x)*(x.rate||effectivePurchaseRate(x.date))-num(x.paid)))],['Actions',x=>'<button class="btn sm gray" onclick="akashEditPurchase(\''+x.id+'\')">Edit</button> <button class="btn sm red" onclick="akashDeletePurchase(\''+x.id+'\')">Delete</button>']],false)+'</div><div class="card section"><h2>Rate History</h2>'+tableRows(rateRows.map(x=>({...x,id:x.id,_entity:'akashRate'})),[['Effective Date',x=>fmtDate(x.date)],['Rate',x=>moneyA(x.rate)],['Action',x=>'<button class="btn sm gray" onclick="akashRateModal(\''+x.id+'\')">Edit</button>']],false)+'</div>';
+    akashShell('milk',body,'Bill Purchase');
+  }
+
+  function akashRateModal(id){
+    const item=id?purchaseRateHistory().find(x=>x.id===id):{id:uid(),date:today(),rate:72};
+    modal((id?'Edit':'Add')+' Purchase Rate','<div class="notice">The new rate applies from the selected effective date. Old entries keep their historical rate.</div><div class="formgrid" style="margin-top:12px"><div class="field"><label>Effective From</label><input id="arDate" type="date" value="'+item.date+'"></div><div class="field"><label>Rate ₹/L</label><input id="arRate" type="number" step="0.01" value="'+item.rate+'"></div></div>',()=>{
+      const n={id:item.id||uid(),date:val('arDate'),rate:num(val('arRate'))};const z=a();const i=z.purchaseRates.findIndex(x=>x.id===n.id);if(i>=0)z.purchaseRates[i]=n;else z.purchaseRates.push(n);z.purchaseRates.sort((x,y)=>String(x.date).localeCompare(String(y.date)));saveA();closeModal();render('milk');
+    });
+  }
+
+  function akashSaleModal(item){
+    item=item||{id:uid(),date:today(),slabId:a().slabs[0]?.id||'',actualQty:0,rate:0,extraPercent:0,cashAmount:0,bankAmount:0};
+    const edit=!!item._edit;
+    const opts=a().slabs.map(s=>'<option value="'+s.id+'" '+(s.id===item.slabId?'selected':'')+'>'+esc(s.name)+'</option>').join('');
+    modal((edit?'Edit':'Add')+' Daily Sale','<div class="notice">Enter milk litres and rate.</div><div class="formgrid" style="margin-top:12px"><div class="field"><label>Date</label><input id="asDate" type="date" value="'+item.date+'"></div><div class="field"><label>Slab</label><select id="asSlab">'+opts+'</select></div><div class="field"><label>Actual Milk L</label><input id="asQty" type="number" step="0.01" value="'+num(item.actualQty)+'"></div><div class="field"><label>Sale Rate ₹/L</label><input id="asRate" type="number" step="0.01" value="'+num(item.rate)+'"></div><div class="field"><label>Extra %</label><input id="asExtra" type="number" step="0.01" value="'+num(item.extraPercent)+'" readonly></div><div class="field"><label>Cash Received ₹</label><input id="asCash" type="number" step="0.01" value="'+num(item.cashAmount)+'"></div><div class="field"><label>UPI / Bank Received ₹</label><input id="asBank" type="number" step="0.01" value="'+num(item.bankAmount)+'"></div></div><div class="notice" style="margin-top:12px">Extra: <b id="asExtraQty">0</b> L • Saleable: <b id="asSaleQty">0</b> L • Sale Amount: <b id="asAmount">₹0</b> • Profit: <b id="asProfit">₹0</b> • Profit %: <b id="asPct">0%</b></div>',()=>{
+      const s=a().slabs.find(x=>x.id===val('asSlab'));const n={...item};n.date=val('asDate');n.slabId=val('asSlab');n.slabName=s?.name||'';n.actualQty=num(val('asQty'));n.extraPercent=num(s?.extraPercent);n.rate=num(s?.rate);n.cashAmount=num(val('asCash'));n.bankAmount=num(val('asBank'));n.saleableQty=saleable(n);n.amount=saleAmount(n);n.profit=saleProfit(n);delete n._edit;
+      if(edit){const i=a().sales.findIndex(x=>x.id===n.id);if(i>=0)a().sales[i]=n}else a().sales.push(n);
+      audit(edit?'UPDATE':'CREATE','akashSale',n.id,null,n);saveA();closeModal();render('sales');
+    });
+    setTimeout(()=>{const rec=()=>{const s=a().slabs.find(x=>x.id===val('asSlab'));if(s){document.getElementById('asExtra').value=s.extraPercent;document.getElementById('asRate').value=s.rate}const n={date:val('asDate'),actualQty:num(val('asQty')),extraPercent:num(s?.extraPercent),rate:num(s?.rate)};const w=n.actualQty*n.extraPercent/100;document.getElementById('asExtraQty').textContent=w.toFixed(3);document.getElementById('asSaleQty').textContent=(n.actualQty+w).toFixed(3);document.getElementById('asAmount').textContent=moneyA((n.actualQty+w)*n.rate);document.getElementById('asProfit').textContent=moneyA((n.actualQty+w)*n.rate-n.actualQty*effectivePurchaseRate(n.date));document.getElementById('asPct').textContent=((n.actualQty+w)*n.rate?(((n.actualQty+w)*n.rate-n.actualQty*effectivePurchaseRate(n.date))/((n.actualQty+w)*n.rate)*100).toFixed(2):'0')+'%'};document.getElementById('asSlab')?.addEventListener('change',rec);document.getElementById('asQty')?.addEventListener('input',rec);document.getElementById('asDate')?.addEventListener('change',rec);rec()},50);
+  }
+
+  function renderAkashSales(){
+    const z=a(), rows=[...z.sales].sort((x,y)=>String(y.date).localeCompare(String(x.date)));
+    const rev=sum(rows,saleAmount), profit=sum(rows,saleProfit), actual=sum(rows,x=>x.actualQty), saleq=sum(rows,saleable), pct=rev?profit/rev*100:0;
+    const body='<div class="sectionhead"><div><h1>Daily Sale</h1><div class="muted">Rate-wise sale • no customer-wise entry</div></div><div class="toolbar"><button class="btn" onclick="akashSaleModal()">+ Add Daily Sale</button></div></div><div class="grid">'+metric('Sales',moneyA(rev))+metric('Actual Milk',actual.toFixed(2)+' L')+metric('Profit',moneyA(profit),pct.toFixed(2)+'%')+'</div><div class="card section">'+tableRows(rows.map(x=>({...x,id:x.id,_entity:'akashSale'})),[['Date',x=>fmtDate(x.date)],['Rate Category',x=>esc(x.slabName&&!/%/.test(x.slabName)?x.slabName:moneyA(x.rate)+' / L')],['Actual Milk',x=>num(x.actualQty).toFixed(2)+' L'],['Rate',x=>moneyA(x.rate)],['Sale',x=>moneyA(saleAmount(x))],['Profit',x=>moneyA(saleProfit(x))],['Actions',x=>'<button class="btn sm gray" onclick="akashEditSale(\''+x.id+'\')">Edit</button> <button class="btn sm red" onclick="akashDeleteSale(\''+x.id+'\')">Delete</button>']],false)+'</div>';
+    akashShell('sales',body,'Daily Sale');
+  }
+
+  function akashSlabModal(id){
+    const item=id?a().slabs.find(x=>x.id===id):{id:uid(),name:'',extraPercent:0,rate:0};
+    modal((id?'Edit':'Add')+' Sale Slab','<div class="notice">Create a slab once. It will appear in the Daily Sale dropdown every time you enter a sale.</div><div class="formgrid" style="margin-top:12px"><div class="field"><label>Slab Name</label><input id="slName" value="'+esc(item.name)+'" placeholder="₹74 / L"></div><div class="field"><label>Extra %</label><input id="slExtra" type="number" step="0.01" value="'+num(item.extraPercent)+'"></div><div class="field"><label>Sale Rate ₹/L</label><input id="slRate" type="number" step="0.01" value="'+num(item.rate)+'"></div></div>',()=>{
+      const n={id:item.id||uid(),name:val('slName')||((num(val('slExtra'))+'% Extra • ₹'+num(val('slRate')))),extraPercent:num(val('slExtra')),rate:num(val('slRate'))};const z=a();const i=z.slabs.findIndex(x=>x.id===n.id);if(i>=0)z.slabs[i]=n;else z.slabs.push(n);saveA();closeModal();render('sales');
+    });
+  }
+  function akashSlabManager(){
+    const list=a().slabs.map(s=>'<div class="notice" style="margin-bottom:8px"><b>'+esc(s.name)+'</b> • '+s.extraPercent+'% Extra • ₹'+s.rate+' <button class="btn sm gray" style="float:right" onclick="akashSlabModal(\''+s.id+'\')">Edit</button></div>').join('');
+    modal('Sale Slabs',list+'<button class="btn green" onclick="closeModal();akashSlabModal()">+ Add Slab</button>');
+  }
+
+  function renderAkashCollections(){
+    const rows=[...a().collections].sort((x,y)=>String(y.date).localeCompare(String(x.date)));
+    const total=sum(rows,x=>x.amount), cash=sum(rows,x=>x.cashAmount), bank=sum(rows,x=>x.bankAmount);
+    const body='<div class="sectionhead"><div><h1>Bill Collection</h1><div class="muted">Bulk collection only • customer-wise data is intentionally not stored here</div></div><button class="btn orange" onclick="akashCollectionModal()">+ Bulk Collection</button></div><div class="grid">'+metric('Total Collection',moneyA(total))+metric('Cash',moneyA(cash))+metric('UPI / Bank',moneyA(bank))+metric('Entries',rows.length)+'</div><div class="card section">'+tableRows(rows.map(x=>({...x,id:x.id,_entity:'akashCollection'})),[['Date',x=>fmtDate(x.date)],['Total',x=>moneyA(x.amount)],['Cash',x=>moneyA(x.cashAmount)],['UPI / Bank',x=>moneyA(x.bankAmount)],['Note',x=>esc(x.note||'Bulk collection')],['Actions',x=>'<button class="btn sm gray" onclick="akashEditCollection(\''+x.id+'\')">Edit</button> <button class="btn sm red" onclick="akashDeleteCollection(\''+x.id+'\')">Delete</button>']],false)+'</div>';
+    akashShell('collections',body,'Bill Collection');
+  }
+  function akashCollectionModal(item){
+    item=item||{id:uid(),date:today(),cashAmount:0,bankAmount:0,note:'Bulk collection'};
+    const edit=!!item._edit;
+    modal((edit?'Edit':'Add')+' Bulk Bill Collection','<div class="notice">No customer name is required. Enter the total money received from the other billing software and split it between Cash and UPI / Bank.</div><div class="formgrid" style="margin-top:12px"><div class="field"><label>Date</label><input id="acDate" type="date" value="'+item.date+'"></div><div class="field"><label>Cash ₹</label><input id="acCash" type="number" step="0.01" value="'+num(item.cashAmount)+'"></div><div class="field"><label>UPI / Bank ₹</label><input id="acBank" type="number" step="0.01" value="'+num(item.bankAmount)+'"></div><div class="field"><label>Note</label><input id="acNote" value="'+esc(item.note||'Bulk collection')+'"></div></div><div class="notice" style="margin-top:12px">Total Collection: <b id="acTotal">'+moneyA(num(item.cashAmount)+num(item.bankAmount))+'</b></div>',()=>{
+      const n={...item,date:val('acDate'),cashAmount:num(val('acCash')),bankAmount:num(val('acBank')),amount:num(val('acCash'))+num(val('acBank')),note:val('acNote')};delete n._edit;
+      if(edit){const i=a().collections.findIndex(x=>x.id===n.id);if(i>=0)a().collections[i]=n}else a().collections.push(n);
+      audit(edit?'UPDATE':'CREATE','akashCollection',n.id,null,n);saveA();closeModal();render('collections');
+    });
+    setTimeout(()=>{['acCash','acBank'].forEach(id=>document.getElementById(id)?.addEventListener('input',()=>document.getElementById('acTotal').textContent=moneyA(num(val('acCash'))+num(val('acBank')))))},30);
+  }
+
+  function renderAkashExpenses(){
+    /* Keep the existing expense module exactly as it is; Akash-only navigation still uses it. */
+    renderExpenses();
+  }
+
+  function renderAkashCash(){
+    const z=a(), start=iso().slice(0,7)+'-01',end=iso(), ss=periodRows(z.sales,start,end),cs=periodRows(z.collections,start,end),ps=periodRows(z.purchases,start,end),ex=periodRows(z.expenses||[],start,end);
+    const salesCash=sum(ss,x=>x.cashAmount),salesBank=sum(ss,x=>x.bankAmount),colCash=sum(cs,x=>x.cashAmount),colBank=sum(cs,x=>x.bankAmount),expenseCash=sum(ex,x=>String(x.paymentMode||'Cash')==='Cash'?x.amount:0),expenseBank=sum(ex,x=>String(x.paymentMode||'')!=='Cash'?x.amount:0),paid=sum(ps,x=>x.paid);
+    const cash=salesCash+colCash-expenseCash-paid,bank=salesBank+colBank- --- TRUNCATED --- 29,474 chars
