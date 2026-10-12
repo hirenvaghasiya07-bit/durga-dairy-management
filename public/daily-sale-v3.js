@@ -40,6 +40,7 @@ function dsKey(c,g){return g==='milk'?'milkcat_'+c.id:(c.key||'othercat_'+c.id);
 function dsProducts(d){return dsCats('milk').map(c=>({id:c.id,key:dsKey(c,'milk'),name:c.name,rate:dsRate(c,d),group:'milk',cat:c})).concat(dsCats('other').map(c=>({id:c.id,key:dsKey(c,'other'),name:c.name,rate:dsRate(c,d),group:'other',cat:c})));}
 function dsSafe(s){return String(s).replace(/[^a-zA-Z0-9_-]/g,'_');}
 window.saleProducts=()=>dsProducts(iso());
+window.addSaleForDate=function(date){window.__dailySalePresetDate=date;window.addSale();};
 window.saleLabel=k=>dsProducts('9999-12-31').find(p=>p.key===k)?.name||(k==='milk'?'Milk':k);
 window.getSaleRate=(k,d)=>{var p=dsProducts(d||iso()).find(p=>p.key===k);return p?dsRate(p.cat,d||iso()):num(db.settings?.salePrices?.[k]);};
 window.addSale=function(){
