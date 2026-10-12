@@ -129,7 +129,7 @@
       if(next.hirenCowMorning>next.vendorCowMorning||next.hirenBuffaloMorning>next.vendorBuffaloMorning||next.hirenCowEvening>next.vendorCowEvening||next.hirenBuffaloEvening>next.vendorBuffaloEvening)return alert('Milk given to Hiren cannot exceed vendor milk for the same type and session.');
       next.vendorMorning=next.vendorCowMorning+next.vendorBuffaloMorning;next.vendorEvening=next.vendorCowEvening+next.vendorBuffaloEvening;
       next.akashMorning=(next.vendorCowMorning-next.hirenCowMorning)+(next.vendorBuffaloMorning-next.hirenBuffaloMorning);next.akashEvening=(next.vendorCowEvening-next.hirenCowEvening)+(next.vendorBuffaloEvening-next.hirenBuffaloEvening);
-      next.rate=purchaseTotal(next)?purchaseAmt(next)/purchaseTotal(next):0;next.total=purchaseAmt(next);next.akashQty=akashQty(next);next.akashAmount=akashMilkCost(next);next.hirenAmount=hirenAmt(next);
+      if((vendorCowTotal(next)>0&&next.cowRate<=0)||(vendorBuffaloTotal(next)>0&&next.buffaloRate<=0))return alert('Set a valid Cow and Buffalo rate in the selected vendor before saving this purchase.');next.rate=purchaseTotal(next)?purchaseAmt(next)/purchaseTotal(next):0;next.total=purchaseAmt(next);next.akashQty=akashQty(next);next.akashAmount=akashMilkCost(next);next.hirenAmount=hirenAmt(next);
       if(next.paid>next.total+0.001)return alert('Paid to Vendor cannot exceed vendor amount.');
       if(next.hirenPaid>next.hirenAmount+0.001)return alert('Received from Hiren cannot exceed the amount for milk given to Hiren.');
       delete next._edit;
