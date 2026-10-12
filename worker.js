@@ -248,7 +248,14 @@ export default {
         ).bind("durga-dairy",JSON.stringify(merged),updatedAt).run();
 
         await saveBackup(env,merged);
-        return json({ok:true,db:merged,updatedAt,business,syncVersion:5},200,req);
+        let responseDb;
+        if(business==="akash"){
+          const akash=merged?.settings?.__businesses?.akash||emptyState();
+          responseDb={...emptyState(),settings:{__businesses:{akash}}};
+        }else{
+          responseDb=clone(merged);responseDb.settings={...(responseDb.settings||{})};delete responseDb.settings.__businesses;
+        }
+        return json({ok:true,db:responseDb,updatedAt,business,syncVersion:6},200,req);
       }
 
       if(url.pathname==="/api/zero-two-state"&&req.method==="GET"){
@@ -259,7 +266,7 @@ export default {
         const row=await session.prepare("SELECT state_json,updated_at FROM workspace_state WHERE workspace_id=?").bind("durga-dairy").first();
         const db=row?.state_json?JSON.parse(row.state_json):emptyState();
         const akash=db?.settings?.__businesses?.akash||emptyState();
-        return json({ok:true,hiren:db,akash,updatedAt:row?.updated_at||null,syncVersion:5},200,req);
+        return json({ok:true,hiren:db,akash,updatedAt:row?.updated_at||null,syncVersion:6},200,req);
       }
 
       if(url.pathname==="/api/backup"&&req.method==="GET"){
