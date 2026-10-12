@@ -104,6 +104,42 @@
       const i=a().purchases.findIndex(x=>x.id===next.id);if(i>=0)a().purchases[i]=next;audit('UPDATE','akashPurchase',next.id,before,next);saveA();closeModal();render('milk');
     });
   }
+  const __hirenMirrorRunning=new Set();
+  function hirenMirrorId(p){return 'akash-hiren-'+String(p.id||'').replace(/[^a-zA-Z0-9_-]/g,'_');}
+  function hirenMirrorRow(p){
+    const cowM=vq(p,'hirenCowMorning'),cowE=vq(p,'hirenCowEvening'),buffM=vq(p,'hirenBuffaloMorning'),buffE=vq(p,'hirenBuffaloEvening');
+    const cow=cowM+cowE,buff=buffM+buffE,total=cow*num(p.cowRate)+buff*num(p.buffaloRate),paid=Math.min(total,num(p.hirenPaid));
+    const id=hirenMirrorId(p),now=new Date().toISOString();
+    return {id,date:p.date,vendor:'Akash',cowLitres:cow,cowRate:num(p.cowRate),buffLitres:buff,buffRate:num(p.buffaloRate),paid,total,balance:Math.max(0,total-paid),
+      cowMorning:cowM,cowEvening:cowE,buffMorning:buffM,buffEvening:buffE,
+      note:'Auto-filled from Akash • original vendor: '+String(p.vendor||'Vendor')+' • Akash purchase ID: '+String(p.id),
+      sourceType:'akash-milk-give-to-hiren',sourceBusinessId:'akash',sourcePurchaseId:String(p.id),businessId:'hiren',
+      createdBy:p.createdBy||'akash',updatedBy:'akash',createdAt:p.createdAt||now,updatedAt:now};
+  }
+  async function syncHirenMilkMirror(p){
+    if(!p||!p.id||!CLOUD_API||!localStorage.getItem('durga-token'))return false;
+    const cow=vq(p,'hirenCowMorning')+vq(p,'hirenCowEvening'),buff=vq(p,'hirenBuffaloMorning')+vq(p,'hirenBuffaloEvening');
+    if(cow+buff<=0){p.hirenMirrorStatus='not-needed';return true;}
+    const id=hirenMirrorId(p);if(__hirenMirrorRunning.has(id))return false;__hirenMirrorRunning.add(id);
+    try{
+      const base=CLOUD_API.replace(/\/$/,''),token=localStorage.getItem('durga-token');
+      const read=await fetch(base+'/api/state?ts='+Date.now(),{method:'GET',headers:{'Authorization':'Bearer '+token,'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
+      if(!read.ok)throw new Error('Could not read cloud state ('+read.status+')');
+      const state=await read.json(),remote=state.db||{},tomb=remote.__tombstones?.milk?.[id];
+      if(tomb){p.hirenMirrorStatus='deleted';p.hirenMirrorLastError='Hiren mirror was deleted; it will not be recreated.';saveA();return false;}
+      const existing=(remote.milk||[]).find(x=>String(x.id)===id||String(x.sourcePurchaseId||'')===String(p.id)&&x.sourceType==='akash-milk-give-to-hiren');
+      const row=hirenMirrorRow(p);row.id=existing?.id||id;row.createdAt=existing?.createdAt||row.createdAt;
+      const stamp=String(p.updatedAt||p.createdAt||p.id).replace(/[^a-zA-Z0-9_-]/g,'_');
+      const auditRow={id:id+'-audit-'+stamp,at:new Date().toISOString(),userId:p.updatedBy||p.createdBy||'akash',userName:'Akash',action:existing?'UPDATE':'CREATE',entity:'milk',recordId:row.id,before:existing||null,after:row,businessId:'hiren',sourceBusinessId:'akash',sourcePurchaseId:String(p.id),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+      const push=await fetch(base+'/api/sync',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'Accept':'application/json'},body:JSON.stringify({workspaceId:'durga-dairy-hiren',db:{milk:[row],audit:[auditRow],settings:{}},deleted:{}})});
+      if(!push.ok)throw new Error('Hiren auto-fill failed ('+push.status+')');
+      p.hirenMirrorStatus='synced';p.hirenMirrorId=row.id;delete p.hirenMirrorLastError;saveA();return true;
+    }catch(e){p.hirenMirrorStatus='pending';p.hirenMirrorLastError=String(e?.message||e);saveA();return false;}
+    finally{__hirenMirrorRunning.delete(id);}
+  }
+  function retryPendingHirenMilkMirrors(){
+    a().purchases.filter(p=>p.hirenMirrorStatus==='pending'&&(vq(p,'hirenCowMorning')+vq(p,'hirenCowEvening')+vq(p,'hirenBuffaloMorning')+vq(p,'hirenBuffaloEvening')>0)).forEach(p=>{syncHirenMilkMirror(p);});
+  }
   function akashPurchaseModal(item){
     const edit=!!(item&&item._edit);
     if(edit&& !hasSplitMilk(item))return akashLegacyPurchaseModal(item);
@@ -133,8 +169,9 @@
       if(next.paid>next.total+0.001)return alert('Paid to Vendor cannot exceed vendor amount.');
       if(next.hirenPaid>next.hirenAmount+0.001)return alert('Received from Hiren cannot exceed the amount for milk given to Hiren.');
       delete next._edit;
+      next.hirenMirrorStatus=(next.hirenCowMorning+next.hirenCowEvening+next.hirenBuffaloMorning+next.hirenBuffaloEvening)>0?'pending':'not-needed';
       const idx=a().purchases.findIndex(x=>x.id===next.id);if(idx>=0)a().purchases[idx]=next;else a().purchases.push(next);
-      audit(edit?'UPDATE':'CREATE','akashPurchase',next.id,before,next);saveA();closeModal();render('milk');
+      audit(edit?'UPDATE':'CREATE','akashPurchase',next.id,before,next);saveA();closeModal();render('milk');if(next.hirenMirrorStatus==='pending')syncHirenMilkMirror(next);
     });
     function recalc(resetRates){const d=akashReadDate('apDate')||today(),v=a().vendors.find(x=>x.id===val('apVendor'));if(resetRates&&v){document.getElementById('apCowRate').value=vendorRate(v,d,'cow');document.getElementById('apBuffaloRate').value=vendorRate(v,d,'buffalo');}
       const vcM=num(val('apVCM')),vbM=num(val('apVBM')),vcE=num(val('apVCE')),vbE=num(val('apVBE')),hcM=num(val('apHCM')),hbM=num(val('apHBM')),hcE=num(val('apHCE')),hbE=num(val('apHBE')),cr=num(val('apCowRate')),br=num(val('apBuffaloRate'));
@@ -186,6 +223,7 @@
   window.toggleAkashVendor=function(id){const v=a().vendors.find(x=>x.id===id);if(!v)return;const before=JSON.parse(JSON.stringify(v));v.active=v.active===false; audit('UPDATE','Akash Vendor',v.id,before,v);saveA();render('vendors');};
 
   function renderAkashMilk(){
+    setTimeout(retryPendingHirenMilkMirrors,250);
     const z=a(),rows=[...z.purchases].sort((x,y)=>String(y.date).localeCompare(String(x.date)));
     const total=sum(rows,purchaseTotal),own=sum(rows,akashQty),paid=sum(rows,x=>x.paid),due=sum(rows,x=>Math.max(0,purchaseAmt(x)-num(x.paid)))+(z.vendors||[]).reduce((t,v)=>t+Math.max(0,num(v.openingBalance)-num(v.openingPaid)),0),hirenDue=sum(rows,x=>Math.max(0,hirenAmt(x)-num(x.hirenPaid))),hirenPaid=sum(rows,x=>x.hirenPaid);
     const rateRows=purchaseRateHistory();
