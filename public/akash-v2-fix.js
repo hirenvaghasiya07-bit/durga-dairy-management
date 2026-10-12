@@ -2,8 +2,9 @@
 function AL(){db.settings=db.settings||{};db.settings.akashV2=db.settings.akashV2||{};if(!Array.isArray(db.settings.akashV2.expenses))db.settings.akashV2.expenses=[];return db.settings.akashV2.expenses}
 window.akExpList=AL;
 if(typeof isAkash!=='function'||!isAkash())return;
-var CATS=['Home','Fixed / Utility','EMI','Hospital','Car','Bike','Grocery','Fuel','Dairy Expense','Other'];
-var PAYS=['Cash','UPI','Bank','Other'];
+var BASE_CATS=['Home','Fixed / Utility','EMI','Hospital','Car','Bike','Grocery','Fuel','Dairy Expense','Other'];
+function CATS(){var a=db.settings?.akashV2||{};return [...new Set(BASE_CATS.concat(a.expenseCategories||[],AL().map(function(x){return String(x.category||'').trim()}).filter(Boolean)))].sort(function(a,b){return a.localeCompare(b)})}
+var PAYS=['Cash','UPI','Bank','Credit','Other'];
 function n(v){return Number(v||0)}
 function opts(list,cur){return list.map(function(k){return '<option '+(k===cur?'selected':'')+'>'+k+'</option>'}).join('')}
 function formHtml(x){
@@ -17,6 +18,17 @@ function formHtml(x){
     +'</div>';
 }
 function readForm(){return {date:val('date'),category:val('cat'),amount:num(val('amount')),paymentMode:val('pay'),description:val('desc')}}
+window.akExpManageCategories=function(){
+  db.settings.akashV2=db.settings.akashV2||{};db.settings.akashV2.expenseCategories=Array.isArray(db.settings.akashV2.expenseCategories)?db.settings.akashV2.expenseCategories:[];
+  var custom=db.settings.akashV2.expenseCategories.slice().sort(function(a,b){return a.localeCompare(b)});
+  var body='<div class="field"><label>New Category</label><input id="akExpNewCategory" placeholder="Enter category name"></div><div class="section"><b>Custom Categories</b>'+ (custom.map(function(x){return '<div class="notice" style="margin-top:6px">'+esc(x)+' <button class="btn sm red" style="float:right" data-name="'+esc(x)+'" onclick="akExpRemoveCategory(this.dataset.name)">Remove</button></div>'}).join('')||'<p class="muted">No custom categories added.</p>')+'</div>';
+  modal('Manage Expense Categories',body,function(){var name=val('akExpNewCategory').trim();if(!name)return alert('Enter a category name.');var list=db.settings.akashV2.expenseCategories;if(!list.includes(name))list.push(name);save();closeModal();expRender()});
+};
+window.akExpRemoveCategory=function(name){
+  if(!confirm('Remove '+name+' from the category list? Existing expense records will be preserved.'))return;
+  db.settings.akashV2.expenseCategories=(db.settings.akashV2.expenseCategories||[]).filter(function(x){return x!==name});
+  closeModal();save();window.akExpManageCategories();
+};
 window.akExpEdit=function(id){
   var L=AL(),i=L.findIndex(function(x){return x.id===id});if(i<0)return;
   var old=JSON.parse(JSON.stringify(L[i]));
@@ -28,7 +40,7 @@ window.akExpEdit=function(id){
 window.akExpDel=function(id){
   if(!confirm('Delete this record? The action will be logged.'))return;
   var L=AL(),i=L.findIndex(function(x){return x.id===id});if(i<0)return;
-  var old=L.splice(i,1)[0];audit('DELETE','Expense',id,old,null);save();render('expenses');
+  var old=L.splice(i,1)[0];db.settings.akashV2.__tomb=db.settings.akashV2.__tomb||{};db.settings.akashV2.__tomb.expenses=db.settings.akashV2.__tomb.expenses||{};db.settings.akashV2.__tomb.expenses[String(id)]={id:String(id),deletedAt:new Date().toISOString(),businessId:'akash',userId:'u_akash'};audit('DELETE','Expense',id,old,null);save();render('expenses');
 };
 function expRender(mode,value){
   mode=mode||'all';value=value||'';
@@ -47,7 +59,7 @@ function expRender(mode,value){
   shell('expenses',
     dateFilters('expenseFilter','expenses')
     +'<div class="sectionhead"><div><h1>Expenses</h1><div class="muted">Akash only. Filter by date and category. Records are oldest to newest.</div></div><button class="btn red" onclick="addExpense()">+ Add Expense</button></div>'
-    +'<div class="card section"><div class="toolbar"><label>Category</label><select id="expenseCategory" onchange="renderExpenses()"><option value="all" '+(cat==='all'?'selected':'')+'>All Categories</option>'+opts(CATS,cat)+'</select><span class="pill green">Total: '+money(total)+'</span></div></div>'
+    +'<div class="card section"><div class="toolbar"><label>Category</label><select id="expenseCategory" onchange="renderExpenses()"><option value="all" '+(cat==='all'?'selected':'')+'>All Categories</option>'+opts(CATS(),cat)+'</select><span class="pill green">Total: '+money(total)+'</span></div></div>'
     +tableRows(rows,cols,false)
     +'<div class="card" style="margin-top:12px;text-align:right"><b>TOTAL: '+money(total)+'</b></div>',
     'Expenses');
