@@ -44,16 +44,18 @@ async function sha256(text){
   return b64(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text)));
 }
 async function readBody(req){try{return await req.json()}catch{return {}}}
-async function tokenFor(env,email){
-  const secret=env.SESSION_SECRET||"CHANGE_THIS_IN_CLOUDFLARE";
-  return sha256(secret+":"+String(email).toLowerCase()+":durga-dairy");
+async function issueSession(env,u){
+  const bytes=crypto.getRandomValues(new Uint8Array(32));
+  const token=b64(bytes).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  const tokenHash=await sha256(token),createdAt=new Date(),expiresAt=new Date(createdAt.getTime()+30*24*60*60*1000).toISOString();
+  await env.DB.prepare("INSERT INTO session_tokens(token_hash,user_id,created_at,expires_at,revoked_at) VALUES(?,?,?,?,NULL)").bind(tokenHash,u.id,createdAt.toISOString(),expiresAt).run();
+  return token;
 }
 async function authUser(req,env){
-  const token=(req.headers.get("authorization")||"").replace(/^Bearer\s+/i,"");
+  const token=(req.headers.get("authorization")||"").replace(/^Bearer\s+/i,"").trim();
   if(!token)return null;
-  const users=await env.DB.prepare("SELECT id,name,email,role,active,password_hash,password_salt FROM users WHERE active=1").all();
-  for(const u of users.results||[]) if(await tokenFor(env,u.email)===token)return u;
-  return null;
+  const tokenHash=await sha256(token),now=new Date().toISOString();
+  return await env.DB.prepare("SELECT u.id,u.name,u.email,u.role FROM session_tokens s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.active=1").bind(tokenHash,now).first();
 }
 
 function emptyState(){
