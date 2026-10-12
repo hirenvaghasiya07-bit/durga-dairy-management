@@ -10,7 +10,7 @@ function portalChooser(){document.getElementById('root').innerHTML='<div class="
 const CLOUD_API=location.hostname==='durga-dairy-live.hiren-vaghasiya07.workers.dev'?'https://durga-dairy-live-api.hiren-vaghasiya07.workers.dev':((window.DURGA_CONFIG&&window.DURGA_CONFIG.apiBase)||'');
 const CLOUD_SYNC_SCHEMA='2026-10-05-v5';
 let cloudState={status:CLOUD_API?'connecting':'local',lastSync:null,error:null};
-const SYNC_ARRAYS=['users','prices','sales','collections','milk','stockPurchases','stockUsage','expenses','customers','vendors','vendorPayments','cashChecks','audit','customerSales','customerPayments','customerBills'];
+const SYNC_ARRAYS=['users','prices','sales','collections','milk','stockPurchases','stockUsage','expenses','customers','vendors','vendorPayments','cashChecks','audit','customerSales','customerPayments','customerBills','customerOpeningBalances','internalTransfers','milkPriceVarieties'];
 
 function cloneCloud(v){return v==null?v:JSON.parse(JSON.stringify(v))}
 function recordTime(x){return x?.updatedAt||x?.updated_at||x?.createdAt||x?.created_at||''}
@@ -21,23 +21,46 @@ function newerRecord(a,b){
   if(ta&&!tb)return a;
   return a;
 }
+function tombstoneStamp(v){return typeof v==='string'?v:(v?.deletedAt||v?.deleted_at||v?.at||'')}
+function mergeTombstones(...sources){
+  const out={};
+  for(const src of sources){for(const [entity,records] of Object.entries(src||{})){
+    out[entity]=out[entity]||{};
+    for(const [id,value] of Object.entries(records||{})){
+      const previous=out[entity][id];
+      if(!previous||tombstoneStamp(value)>=tombstoneStamp(previous))out[entity][id]=cloneCloud(value);
+    }
+  }}
+  return out;
+}
+function recordDeletion(entity,id,record){
+  if(!entity||id==null)return;
+  db.__tombstones=mergeTombstones(db.__tombstones);
+  db.__tombstones[entity]=db.__tombstones[entity]||{};
+  db.__tombstones[entity][String(id)]={recordId:String(id),businessId:BUSINESS_ID||db.businessId||(isAkash()?'akash':'hiren'),entityType:entity,deletedAt:new Date().toISOString(),deletedBy:user()?.id||'unknown',deletionVersion:6,recordDate:record?.date||null};
+}
+function pendingDeletionPayload(state=db){
+  const out={};
+  for(const [entity,records] of Object.entries(state.__tombstones||{})){const ids=Object.keys(records||{});if(ids.length)out[entity]=ids;}
+  return out;
+}
 function mergeCloudDB(local,remote){
   const base=structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB));
   const out=Object.assign(base,remote||{},local||{});
+  out.settings={...(remote?.settings||{}),...(local?.settings||{})};
+  out.__tombstones=mergeTombstones(remote?.__tombstones,local?.__tombstones);
   for(const key of SYNC_ARRAYS){
     const lm=Array.isArray(local?.[key])?local[key]:[];
     const rm=Array.isArray(remote?.[key])?remote[key]:[];
     const map=new Map();
     for(const x of rm)if(x?.id!=null)map.set(String(x.id),x);
-    for(const x of lm)if(x?.id!=null){
-      const id=String(x.id);
-      map.set(id,map.has(id)?newerRecord(x,map.get(id)):x);
-    }
+    for(const x of lm)if(x?.id!=null){const id=String(x.id);map.set(id,map.has(id)?newerRecord(x,map.get(id)):x);}
     const noId=[...rm.filter(x=>x?.id==null),...lm.filter(x=>x?.id==null)];
-    out[key]=[...map.values(),...noId];
+    const dead=out.__tombstones[key]||{};
+    out[key]=[...map.values(),...noId].filter(x=>x?.id==null||!Object.prototype.hasOwnProperty.call(dead,String(x.id)));
   }
   out.currentUser=local?.currentUser||remote?.currentUser||null;
-  out.version=Math.max(num(local?.version),num(remote?.version),5);
+  out.version=Math.max(num(local?.version),num(remote?.version),6);
   return out;
 }
 function cloudBusiness(remote){
@@ -110,7 +133,7 @@ async function cloudSync(){
     const push=await fetch(base+'/api/sync',{
       method:'POST',
       headers:{...({'Content-Type':'application/json','Authorization':'Bearer '+token,'Accept':'application/json'})},
-      body:JSON.stringify({workspaceId:'durga-dairy-'+BUSINESS_ID,db:pushDB})
+      body:JSON.stringify({workspaceId:'durga-dairy-'+BUSINESS_ID,db:pushDB,deleted:pendingDeletionPayload(pushDB)})
     });
     if(!push.ok)throw new Error('Cloud write failed ('+push.status+')');
     const j=await push.json();
@@ -179,7 +202,7 @@ const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random();
 const now=()=>new Date(); const iso=()=>now().toISOString().slice(0,10); const ym=d=>String(d||'').slice(0,7); const fmtDate=d=>{const [y,m,day]=String(d||'').slice(0,10).split('-'); return day&&m&&y?`${day}-${m}-${y}`:String(d||'')}; const filterDate=(d,mode='all',value='')=>{if(!value||mode==='all')return true; if(mode==='year')return String(d).slice(0,4)===value; if(mode==='month')return String(d).slice(0,7)===value; return String(d)===value};
 const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
 const num=n=>Number(n||0); const esc=s=>String(s??'').replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m]));
-const defaultDB={version:2,users:[{id:'u_owner',name:'Hiren',email:'owner@durga.local',pin:'1234',role:'Owner',active:true},{id:'u_brother',name:'Brother',email:'brother@durga.local',pin:'3333',role:'Full Access Member',active:true},{id:'u_family',name:'Family Member',email:'family@durga.local',pin:'1111',role:'Family Member',active:true},{id:'u_staff',name:'Dairy Staff',email:'staff@durga.local',pin:'2222',role:'Staff',active:true}],currentUser:null,settings:{cowRate:72,buffaloRate:68,gheeBuyRate:1050,gheeSaleRate:0,pedaBuyRate:180,pedaSaleRate:0,salePrices:{milk82:82,milk72:72,buttermilk:30,ghee:1100,peda:400}},prices:[],sales:[],collections:[],milk:[],stockPurchases:[],stockUsage:[],expenses:[],customers:[],milkSlabs:[{id:'slab_0',name:'0%',percent:0},{id:'slab_15',name:'15%',percent:15},{id:'slab_25',name:'25%',percent:25}],vendors:[],vendorPayments:[],cashChecks:[],audit:[],customerSales:[],customerPayments:[],customerBills:[]};
+const defaultDB={version:6,__tombstones:{},users:[{id:'u_owner',name:'Hiren',email:'owner@durga.local',pin:'1234',role:'Owner',active:true},{id:'u_brother',name:'Brother',email:'brother@durga.local',pin:'3333',role:'Full Access Member',active:true},{id:'u_family',name:'Family Member',email:'family@durga.local',pin:'1111',role:'Family Member',active:true},{id:'u_staff',name:'Dairy Staff',email:'staff@durga.local',pin:'2222',role:'Staff',active:true}],currentUser:null,settings:{cowRate:72,buffaloRate:68,gheeBuyRate:1050,gheeSaleRate:0,pedaBuyRate:180,pedaSaleRate:0,salePrices:{milk82:82,milk72:72,buttermilk:30,ghee:1100,peda:400}},prices:[],sales:[],collections:[],milk:[],stockPurchases:[],stockUsage:[],expenses:[],customers:[],milkSlabs:[{id:'slab_0',name:'0%',percent:0},{id:'slab_15',name:'15%',percent:15},{id:'slab_25',name:'25%',percent:25}],vendors:[],vendorPayments:[],cashChecks:[],audit:[],customerSales:[],customerPayments:[],customerBills:[]};
 let db=load();
 function load(){try{const raw=localStorage.getItem(KEY);if(raw)return Object.assign(structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB)),JSON.parse(raw));const fresh=structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB));if(BUSINESS_ID==='akash'){fresh.users=fresh.users.filter(u=>u.id==='u_brother').map(u=>({...u,name:'Akash',email:'akash@durga.local'}));fresh.currentUser=null;fresh.businessId='akash'}else{fresh.businessId='hiren'}return fresh}catch(e){return structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB))}}
 function ensureSalesConfig(){db.settings=db.settings||{};db.settings.salePrices=Object.assign({milk:72,buttermilk:30,ghee:1100,peda:400},db.settings.salePrices||{}); if(isAkash()) db.settings.salePrices.milk= num(db.settings.salePrices.milk||76);if(db.settings.salePrices.milk==null)db.settings.salePrices.milk=72;db.sales=(db.sales||[]).map(x=>{if(x.saleKey==='milk82'||x.saleKey==='milk72'||x.product==='Milk'){x.saleKey='milk';x.product='Milk'}if(!x.rate&&x.qty)x.rate=num(x.amount)/num(x.qty);return x});db.customers=(db.customers||[]).map(x=>{if(!x.saleKey&&x.product)x.saleKey=String(x.product).toLowerCase()==='milk'?'milk':String(x.product).toLowerCase()==='buttermilk'?'buttermilk':String(x.product).toLowerCase()==='ghee'?'ghee':String(x.product).toLowerCase()==='peda'?'peda':'other';if(!x.priceHistory&&x.rate)x.priceHistory=[{date:x.createdAt?String(x.createdAt).slice(0,10):iso(),rate:num(x.rate)}];return x})}
@@ -190,7 +213,7 @@ function getSaleRate(key){ensureSalesConfig();return num(db.settings.salePrices[
 function setSaleRate(key,rate){ensureSalesConfig();db.settings.salePrices[key]=num(rate);save()}
 function customerRateFor(c,key,date){if(!c)return getSaleRate(key);const h=(c.priceHistory||[]).filter(x=>x.productKey===key||(!x.productKey&&c.saleKey===key)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));let rate=num(c.rate);for(const x of h){if(String(x.date)<=String(date))rate=num(x.rate)}return rate||getSaleRate(key)}
 function addCustomerPriceHistory(c,key,date,rate){c.priceHistory=c.priceHistory||[];c.priceHistory.push({id:uid(),productKey:key,date,rate:num(rate)});c.priceHistory.sort((a,b)=>String(a.date).localeCompare(String(b.date)))}
-function save(){ensureSalesConfig();localStorage.setItem(KEY,JSON.stringify(db));scheduleCloudSync()}
+function save(){ensureSalesConfig();db.__tombstones=db.__tombstones||{};db.businessId=BUSINESS_ID||db.businessId||'hiren';localStorage.setItem(KEY,JSON.stringify(db));scheduleCloudSync()}
 function user(){return db.users.find(u=>u.id===db.currentUser)}
 function audit(action,entity,recordId,before=null,after=null){db.audit.push({id:uid(),at:new Date().toISOString(),userId:user()?.id||'system',userName:user()?.name||'System',action,entity,recordId,before,after});save()}
 function allowed(role,feature){if(role==='Owner'||role==='Full Access Member')return true;if(role==='Manager')return !['users','cashSettings'].includes(feature);if(role==='Family Member')return ['expenses'].includes(feature);if(role==='Staff')return ['sales'].includes(feature);return false}
@@ -490,7 +513,7 @@ function saveCustomerDailyInline(customerId,date,el){
   const cm=num(document.getElementById('cmq_'+customerId)?.value),ce=num(document.getElementById('ceq_'+customerId)?.value),bm=num(document.getElementById('bmq_'+customerId)?.value),be=num(document.getElementById('beq_'+customerId)?.value);
   const s=customerMilkSchedule(c),qty=cm+ce+bm+be,amount=cm*s.cow.morningRate+ce*s.cow.eveningRate+bm*s.buffalo.morningRate+be*s.buffalo.eveningRate;let r=customerDailyExisting(customerId,date);
   if(!qty){
-    if(r){db.customerSales=db.customerSales.filter(x=>x.id!==r.id);audit('DELETE','Customer Daily Sale',r.id,r,null);save();}
+    if(r){db.customerSales=db.customerSales.filter(x=>x.id!==r.id);recordDeletion('customerSales',r.id,r);audit('DELETE','Customer Daily Sale',r.id,r,null);save();}
     if(el){el.value='0';}
     return;
   }
@@ -516,7 +539,7 @@ function editCustomerDailyMilk(id){
     '<div class="field"><label>Buffalo Evening Rate ₹/L</label><input id="editBuffEveningRate" type="number" step="0.01" value="'+num(r.buffEveningRate??s.buffalo.eveningRate)+'"></div><div class="field"><label>Buffalo Evening Slab</label><select id="editBuffEveningSlab">'+akashSlabOptions(r.buffEveningSlabId||s.buffalo.eveningSlabId)+'</select></div><div class="field"><label>Buffalo Evening (L)</label><input id="editBuffEvening" type="number" step="0.01" value="'+num(r.buffEveningQty)+'"></div>'+
     '<div class="field span2"><label>Total</label><input value="'+num(r.qty).toFixed(2)+' L" readonly></div></div>',()=>{
       const date=val('editMilkDate'),cr1=num(val('editCowMorningRate')),cr2=num(val('editCowEveningRate')),br1=num(val('editBuffMorningRate')),br2=num(val('editBuffEveningRate')),cm=num(val('editCowMorning')),ce=num(val('editCowEvening')),bm=num(val('editBuffMorning')),be=num(val('editBuffEvening')),qty=cm+ce+bm+be,amount=cm*cr1+ce*cr2+bm*br1+be*br2;
-      if(!date)return alert('Date required.');if(!qty){if(!confirm('All quantities are zero. Delete this entry?'))return;db.customerSales=db.customerSales.filter(x=>x.id!==id);audit('DELETE','Customer Daily Sale',id,r,null);save();closeModal();editCustomerEntries(r.customerId);return}
+      if(!date)return alert('Date required.');if(!qty){if(!confirm('All quantities are zero. Delete this entry?'))return;db.customerSales=db.customerSales.filter(x=>x.id!==id);recordDeletion('customerSales',id,r);audit('DELETE','Customer Daily Sale',id,r,null);save();closeModal();editCustomerEntries(r.customerId);return}
       const duplicate=customerDailyExisting(r.customerId,date);if(duplicate&&duplicate.id!==id)return alert('An entry already exists for this customer on '+fmtDate(date)+'. Edit that entry instead.');
       r.date=date;r.cowMorningQty=cm;r.cowEveningQty=ce;r.buffMorningQty=bm;r.buffEveningQty=be;r.morningQty=cm+bm;r.eveningQty=ce+be;r.qty=qty;r.cowMorningRate=cr1;r.cowEveningRate=cr2;r.buffMorningRate=br1;r.buffEveningRate=br2;r.cowRate=cr1||cr2;r.buffRate=br1||br2;
       r.cowMorningSlabId=val('editCowMorningSlab');r.cowEveningSlabId=val('editCowEveningSlab');r.buffMorningSlabId=val('editBuffMorningSlab');r.buffEveningSlabId=val('editBuffEveningSlab');r.rate=amount/qty;r.amount=amount;
@@ -526,7 +549,7 @@ function editCustomerDailyMilk(id){
 function deleteCustomerDailyMilk(id){
   const r=(db.customerSales||[]).find(x=>x.id===id);if(!r)return;
   if(!confirm('Delete milk entry for '+fmtDate(r.date)+'?'))return;
-  db.customerSales=db.customerSales.filter(x=>x.id!==id);audit('DELETE','Customer Daily Sale',id,r,null);save();editCustomerEntries(r.customerId);
+  db.customerSales=db.customerSales.filter(x=>x.id!==id);recordDeletion('customerSales',id,r);audit('DELETE','Customer Daily Sale',id,r,null);save();editCustomerEntries(r.customerId);
 }
 
 function renderCustomerDailyMilk(date=iso()){
@@ -768,7 +791,7 @@ else if(entity==='stockPurchases') body=`<div class="formgrid"><div class="field
 else return alert('This record type is not editable in this prototype.');
 modal('Edit '+entity,body,()=>{let next={...item}; if(entity==='sales'){next.date=val('date');next.product=val('product');next.qty=num(val('qty'));next.amount=num(val('amount'));next.description=val('desc')} if(entity==='collections'){next.date=val('date');next.mode=val('mode');next.name=val('name');next.amount=num(val('amount'));next.paymentMode=val('pay')} if(entity==='expenses'){next.date=val('date');next.category=val('cat');next.amount=num(val('amount'));next.paymentMode=val('pay');next.description=val('desc')} if(entity==='milk'){next.date=val('date');next.vendor=val('vendor');next.cowLitres=num(val('cow'));next.cowRate=num(val('cowRate'));next.buffLitres=num(val('buff'));next.buffRate=num(val('buffRate'));next.paid=num(val('paid'));next.total=next.cowLitres*next.cowRate+next.buffLitres*next.buffRate;next.balance=next.total-next.paid} if(entity==='stockPurchases'){next.date=val('date');next.item=val('item');next.qty=num(val('qty'));next.rate=num(val('rate'));next.paid=num(val('paid'));next.vendor=val('vendor');next.total=next.qty*next.rate;next.balance=next.total-next.paid} Object.assign(item,next);audit('UPDATE',entity,item.id,old,item);save();closeModal();render(entity==='stockPurchases'?'stock':entity==='expenses'?'expenses':entity==='sales'?'sales':entity==='collections'?'collections':'milk')})}
 
-function deleteGeneric(entity,id){if(entity==='vendorPayments')return alert('Vendor payment history cannot be deleted from this screen.');if(!confirm('Delete this record? The action will be logged.'))return;const arr=db[entity]||[];const i=arr.findIndex(x=>x.id===id);if(i<0)return;const old=arr[i];arr.splice(i,1);audit('DELETE',entity,id,old,null);save();render(entity==='sales'?'sales':entity==='collections'?'collections':entity==='milk'?'milk':entity==='stockPurchases'||entity==='stockUsage'?'stock':entity==='expenses'?'expenses':entity==='customers'?'customers':'vendors')}
+function deleteGeneric(entity,id){if(entity==='vendorPayments')return alert('Vendor payment history cannot be deleted from this screen.');if(!confirm('Delete this record? The action will be logged.'))return;const arr=db[entity]||[];const i=arr.findIndex(x=>x.id===id);if(i<0)return;const old=arr[i];arr.splice(i,1);recordDeletion(entity,id,old);audit('DELETE',entity,id,old,null);save();render(entity==='sales'?'sales':entity==='collections'?'collections':entity==='milk'?'milk':entity==='stockPurchases'||entity==='stockUsage'?'stock':entity==='expenses'?'expenses':entity==='customers'?'customers':'vendors')}
 function render(k){window.__durgaView=k;if(k==='dashboard')dashboard();else if(k==='sales')renderSales();else if(k==='collections')renderCollections();else if(k==='milk')renderMilk();else if(k==='stock')renderStock();else if(k==='expenses')renderExpenses();else if(k==='customers')renderCustomers();else if(k==='vendors')renderVendors();else if(k==='cash')renderCash();else if(k==='reports')renderReports();else if(k==='audit')renderAudit();else if(k==='backup')renderBackup();else if(k==='users')renderUsers()}
 function zeroTwoLogin(){ portalChooser(); }
 async function doZeroTwoLogin(){
