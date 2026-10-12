@@ -235,6 +235,17 @@ function sanitizeIncomingForRole(incoming,remote,role,actor){
   const policy=rolePolicy(role),safe=clone(incoming||emptyState()),remoteAudit=Array.isArray(remote?.audit)?remote.audit:[];
   for(const key of ARRAY_KEYS)if(!policy.arrays.has(key))safe[key]=[];
   if(!policy.users)safe.users=[];
+  if(["Family Member","Staff"].includes(role)){
+    for(const key of policy.arrays){
+      if(key==="audit")continue;
+      const existing=new Map((Array.isArray(remote?.[key])?remote[key]:[]).filter(x=>x?.id!=null).map(x=>[String(x.id),x]));
+      safe[key]=(Array.isArray(safe[key])?safe[key]:[]).filter(x=>{
+        if(!x||x.id==null)return false;
+        const previous=existing.get(String(x.id));
+        return !previous?true:String(previous.userId||previous.createdBy||"")===String(actor.id);
+      }).map(x=>({...x,userId:actor.id,updatedBy:actor.id,businessId:actor.business}));
+    }
+  }
   safe.settings=scopedSettings(safe.settings,policy);
   const existingAuditIds=new Set(remoteAudit.map(x=>String(x?.id)));
   safe.audit=(Array.isArray(incoming?.audit)?incoming.audit:[]).filter(x=>x&&x.id!=null&&!existingAuditIds.has(String(x.id))).map(x=>({...x,userId:actor.id,userName:actor.name,businessId:actor.business,createdAt:x.createdAt||x.at||new Date().toISOString()}));
@@ -342,7 +353,16 @@ export default {
         const remoteBusiness=business==="akash"?(remote?.settings?.__businesses?.akash||emptyState()):remote;
         const incomingBusiness=business==="akash"?(incoming?.settings?.__businesses?.akash||incoming||emptyState()):incoming;
         const sanitized=sanitizeIncomingForRole(incomingBusiness,remoteBusiness,u.role,{id:u.id,name:u.name,business});
-        const allowedDeleted={};for(const key of Object.keys(deleted||{}))if(policy.arrays.has(key))allowedDeleted[key]=deleted[key];
+        const allowedDeleted={};
+        for(const key of Object.keys(deleted||{})){
+          if(!policy.arrays.has(key))continue;
+          let ids=Array.isArray(deleted[key])?deleted[key].map(String):[];
+          if(["Family Member","Staff"].includes(u.role)){
+            const existing=new Map((Array.isArray(remoteBusiness?.[key])?remoteBusiness[key]:[]).filter(x=>x?.id!=null).map(x=>[String(x.id),x]));
+            ids=ids.filter(id=>{const previous=existing.get(id);return previous&&String(previous.userId||previous.createdBy||"")===String(u.id)});
+          }
+          if(ids.length)allowedDeleted[key]=ids;
+        }
         let merged;
         try{
           const safePayload=business==="akash"?{...emptyState(),settings:{__businesses:{akash:sanitized}}}:sanitized;
