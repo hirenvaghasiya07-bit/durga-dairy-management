@@ -16,7 +16,7 @@ jobs:
           node-version: "22"
       - name: Check frontend syntax
         run: >-
-          node -e 'const fs=require("node:fs"); const vm=require("node:vm"); for (const f of ["public/app.js","public/akash-v2.js","public/akash-v2-fix.js","public/all-v2.js","public/bootstrap.js","public/date-dropdown-live-check.js","public/daily-sale-v3.js"]) new vm.Script(fs.readFileSync(f,"utf8"), { filename: f });'
+          node -e 'const fs=require("node:fs"); const vm=require("node:vm"); for (const f of ["public/app.js","public/akash-v2.js","public/akash-v2-fix.js","public/all-v2.js","public/bootstrap.js","public/date-dropdown-live-check.js","public/daily-sale-v3.js","public/customer-module-v1.js"]) new vm.Script(fs.readFileSync(f,"utf8"), { filename: f });'
       - name: Check Worker syntax
         run: node --check worker.js
       - name: Check API and deployment scripts
