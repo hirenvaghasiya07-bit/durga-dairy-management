@@ -1,8 +1,8 @@
-const CACHE='durga-dairy-v9';
-const BUILD_VERSION='2026-10-12-sync-safety';
+const CACHE='durga-dairy-v10';
+const BUILD_VERSION='2026-10-12-complete-v1';
 self.addEventListener('install',event=>{
   self.skipWaiting();
-  event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['./','./index.html','./app.js','./config.js','./manifest.json'])));
+  event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['./','./index.html','./app.js?v=20261012-complete-v1','./config.js?v=20261012-complete-v1','./akash-v2.js?v=20261012-complete-v1','./akash-v2-fix.js?v=20261012-complete-v1','./all-v2.js?v=20261012-complete-v1','./bootstrap.js?v=20261012-complete-v1','./manifest.json'])));
 });
 self.addEventListener('activate',event=>{
   event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('durga-dairy-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim()));
