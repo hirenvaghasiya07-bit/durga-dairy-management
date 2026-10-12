@@ -20,7 +20,7 @@
   const purchaseTotal=x=>num(x.vendorMorning)+num(x.vendorEvening);const purchaseAmt=x=>purchaseTotal(x)*num(x.rate||effectivePurchaseRate(x.date));
   const akashQty=x=>num(x.akashMorning)+num(x.akashEvening);
   const saleable=x=>num(x.actualQty)*(1+num(x.extraPercent)/100);
-  const rateGroups=ss=>[...new Set(ss.map(x=>num(x.rate)))].sort((p,q)=>p-q).map(r=>({id:'r'+r,name:'₹'+r+' per litre'}));
+  const rateGroups=ss=>{const m=new Map();ss.forEach(x=>{const id=x.categoryId||('r'+num(x.rate)),name=x.categoryName||x.slabName||('₹'+num(x.rate)+' per litre');if(!m.has(id))m.set(id,{id,name});});return [...m.values()].sort((x,y)=>String(x.name).localeCompare(String(y.name)));};
   const saleAmount=x=>saleable(x)*num(x.rate);
   const saleCost=x=>num(x.actualQty)*rateAt(x.date);
   const saleProfit=x=>saleAmount(x)-saleCost(x);
@@ -62,7 +62,7 @@
     const margin=sales?profit/sales*100:0;
     const recent=[...ss.map(x=>({date:x.date,type:'Daily Sale',desc:x.slabName,amount:saleAmount(x)})),...cs.map(x=>({date:x.date,type:'Bill Collection',desc:x.note||'Bulk collection',amount:x.amount})),...ps.map(x=>({date:x.date,type:'Milk Purchase',desc:'Main Vendor',amount:purchaseAmt(x)})),...ex.map(x=>({date:x.date,type:'Expense',desc:x.category||'Expense',amount:-num(x.amount)}))].sort((x,y)=>String(y.date).localeCompare(String(x.date))).slice(0,12);
     const slabCards=rateGroups(ss).map(s=>{
-      const rows=ss.filter(x=>('r'+num(x.rate))===s.id), q=sum(rows,x=>x.actualQty), sq=sum(rows,saleable), rev=sum(rows,saleAmount), pr=sum(rows,saleProfit), pct=rev?pr/rev*100:0;
+      const rows=ss.filter(x=>(x.categoryId||('r'+num(x.rate)))===s.id), q=sum(rows,x=>x.actualQty), sq=sum(rows,saleable), rev=sum(rows,saleAmount), pr=sum(rows,saleProfit), pct=rev?pr/rev*100:0;
       return '<div class="card"><h3 style="margin:0 0 8px">'+esc(s.name)+'</h3><div class="small">Actual Milk</div><b>'+q.toFixed(2)+' L</b><div class="small" style="margin-top:7px">Saleable Milk</div><b>'+sq.toFixed(2)+' L</b><div class="small" style="margin-top:7px">Sales</div><b>'+moneyA(rev)+'</b><div class="small" style="margin-top:7px">Profit</div><b class="'+(pr>=0?'kpiGood':'kpiBad')+'">'+moneyA(pr)+' • '+pct.toFixed(2)+'%</b></div>';
     }).join('');
     const max=Math.max(1,...[vendorPurchase,sales,collection,exp].map(Number));
@@ -204,7 +204,7 @@
   function renderAkashReports(){
     const z=a(), ss=z.sales, ps=z.purchases, cs=z.collections, ex=db.expenses||[];
     const bySlab=rateGroups(ss).map(s=>{const r=ss.filter(x=>('r'+num(x.rate))===s.id),rev=sum(r,saleAmount),pr=sum(r,saleProfit);return '<div class="card"><h3>'+esc(s.name)+'</h3><p>Actual: <b>'+sum(r,x=>x.actualQty).toFixed(2)+' L</b></p><p>Saleable: <b>'+sum(r,saleable).toFixed(2)+' L</b></p><p>Sales: <b>'+moneyA(rev)+'</b></p><p>Profit: <b>'+moneyA(pr)+'</b></p><p>Profit %: <b>'+(rev?(pr/rev*100).toFixed(2):'0')+'%</b></p></div>'}).join('');
-    const body='<div class="sectionhead"><div><h1>Akash Reports</h1><div class="muted">Current stored position • all history</div></div></div><div class="grid">'+metric('Purchase',moneyA(sum(ps,purchaseAmt)))+metric('Sales',moneyA(sum(ss,saleAmount)))+metric('Collection',moneyA(sum(cs,x=>x.amount)))+metric('Expense',moneyA(sum(ex,x=>x.amount)))+'</div><div class="sectionhead"><h2>Slab-wise Profit</h2></div><div class="two">'+bySlab+'</div><div class="card section"><h2>Daily Position</h2>'+tableRows(ss.map(x=>({...x,id:x.id,_entity:'akashReport'})),[['Date',x=>fmtDate(x.date)],['Rate Category',x=>esc(x.slabName&&!/%/.test(x.slabName)?x.slabName:moneyA(x.rate)+' / L')],['Actual',x=>x.actualQty.toFixed(2)+' L'],['Saleable',x=>x.saleableQty.toFixed(2)+' L'],['Sales',x=>moneyA(saleAmount(x))],['Profit',x=>moneyA(saleProfit(x))]],false)+'</div>';
+    const body='<div class="sectionhead"><div><h1>Akash Reports</h1><div class="muted">Current stored position • all history</div></div></div><div class="grid">'+metric('Purchase',moneyA(sum(ps,purchaseAmt)))+metric('Sales',moneyA(sum(ss,saleAmount)))+metric('Collection',moneyA(sum(cs,x=>x.amount)))+metric('Expense',moneyA(sum(ex,x=>x.amount)))+'</div><div class="sectionhead"><h2>Category-wise Profit</h2></div><div class="two">'+bySlab+'</div><div class="card section"><h2>Daily Position</h2>'+tableRows(ss.map(x=>({...x,id:x.id,_entity:'akashReport'})),[['Date',x=>fmtDate(x.date)],['Price Category',x=>esc(x.slabName&&!/%/.test(x.slabName)?x.slabName:moneyA(x.rate)+' / L')],['Actual',x=>x.actualQty.toFixed(2)+' L'],['Saleable',x=>x.saleableQty.toFixed(2)+' L'],['Sales',x=>moneyA(saleAmount(x))],['Profit',x=>moneyA(saleProfit(x))]],false)+'</div>';
     akashShell('reports',body,'Reports');
   }
 
