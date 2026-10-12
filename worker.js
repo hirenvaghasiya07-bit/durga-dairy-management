@@ -181,6 +181,13 @@ function mergeBusiness(remote,incoming,deleted={},business="hiren",actor="author
   const tombstones=addDeletionTombstones(mergeTombstones(safeRemote?.__tombstones,safeIncoming?.__tombstones),deleted,business,actor);
   out.__tombstones=tombstones;
   for(const key of ARRAY_KEYS){
+    if(key==="audit"){
+      const existing=Array.isArray(safeRemote?.audit)?safeRemote.audit:[];
+      const ids=new Set(existing.map(x=>String(x?.id)));
+      const appended=(Array.isArray(safeIncoming?.audit)?safeIncoming.audit:[]).filter(x=>x&&x.id!=null&&!ids.has(String(x.id)));
+      out.audit=[...existing,...appended];
+      continue;
+    }
     if(business==="akash"&&["internalTransfers","customerOpeningBalances"].includes(key)){out[key]=Array.isArray(safeRemote?.[key])?safeRemote[key]:[];continue;}
     if(business==="hiren"&&key==="milkPriceVarieties"){out[key]=Array.isArray(safeRemote?.[key])?safeRemote[key]:[];continue;}
     out[key]=mergeArrayById(safeRemote?.[key],safeIncoming?.[key],tombstones,key);
@@ -199,6 +206,45 @@ function mergeBusiness(remote,incoming,deleted={},business="hiren",actor="author
   - A stale Akash snapshot can never overwrite Hiren.
   - A stale Hiren snapshot can never overwrite Akash.
 */
+function rolePolicy(role){
+  if(["Owner","Full Access Member"].includes(role))return {arrays:new Set(ARRAY_KEYS),users:true,settings:"all"};
+  if(role==="Manager")return {arrays:new Set(ARRAY_KEYS.filter(k=>k!=="milkPriceVarieties")),users:false,settings:"manager"};
+  if(role==="Family Member")return {arrays:new Set(["expenses","audit"]),users:false,settings:"family"};
+  if(role==="Staff")return {arrays:new Set(["sales","audit"]),users:false,settings:"staff"};
+  return {arrays:new Set(),users:false,settings:"none"};
+}
+function scopedSettings(settings,policy){
+  const s=settings||{};
+  if(policy.settings==="all")return clone(s);
+  if(policy.settings==="manager"){
+    const keys=["salePrices","cowRate","buffaloRate","gheeBuyRate","gheeSaleRate","pedaBuyRate","pedaSaleRate","milkSlabs","expenseCategories","customerBillTerms","customerBillPaymentInstructions"];
+    return Object.fromEntries(keys.filter(k=>Object.prototype.hasOwnProperty.call(s,k)).map(k=>[k,clone(s[k])]));
+  }
+  if(policy.settings==="family")return Object.prototype.hasOwnProperty.call(s,"expenseCategories")?{expenseCategories:clone(s.expenseCategories)}:{};
+  return {};
+}
+function scopeStateForRole(source,role){
+  const policy=rolePolicy(role),out=clone(source||emptyState());
+  for(const key of ARRAY_KEYS)if(!policy.arrays.has(key))out[key]=[];
+  if(!policy.users)out.users=(out.users||[]).map(u=>({id:u.id,name:u.name,email:u.email,role:u.role,active:u.active}));
+  out.settings=scopedSettings(out.settings,policy);
+  out.currentUser=null;
+  return out;
+}
+function sanitizeIncomingForRole(incoming,remote,role,actor){
+  const policy=rolePolicy(role),safe=clone(incoming||emptyState()),remoteAudit=Array.isArray(remote?.audit)?remote.audit:[];
+  for(const key of ARRAY_KEYS)if(!policy.arrays.has(key))safe[key]=[];
+  if(!policy.users)safe.users=[];
+  safe.settings=scopedSettings(safe.settings,policy);
+  const existingAuditIds=new Set(remoteAudit.map(x=>String(x?.id)));
+  safe.audit=(Array.isArray(incoming?.audit)?incoming.audit:[]).filter(x=>x&&x.id!=null&&!existingAuditIds.has(String(x.id))).map(x=>({...x,userId:actor.id,userName:actor.name,businessId:actor.business,createdAt:x.createdAt||x.at||new Date().toISOString()}));
+  if(safe.__tombstones){
+    const keep={};
+    for(const key of Object.keys(safe.__tombstones))if(policy.arrays.has(key))keep[key]=safe.__tombstones[key];
+    safe.__tombstones=keep;
+  }
+  return safe;
+}
 function mergeWorkspace(remote,incoming,business,deleted={},actor="authorized-user"){
   const base=clone(remote||emptyState());
   if(business==="akash"){
@@ -235,7 +281,7 @@ export default {
       await ensureSeed(env);
 
       if(url.pathname==="/api/health")
-        return json({ok:true,service:"Durga Dairy",cloudflare:true,syncVersion:6},200,req);
+        return json({ok:true,service:"Durga Dairy",cloudflare:true,syncVersion:7},200,req);
 
       if(url.pathname==="/api/login"&&req.method==="POST"){
         const b=await readBody(req);
@@ -269,11 +315,12 @@ export default {
         let db;
         if(business==="akash"){
           const akash=full?.settings?.__businesses?.akash||emptyState();
-          db={...emptyState(),settings:{__businesses:{akash}}};
+          db={...emptyState(),settings:{__businesses:{akash:scopeStateForRole(akash,u.role)}}};
         }else{
           db=clone(full);db.settings={...(db.settings||{})};delete db.settings.__businesses;
+          db=scopeStateForRole(db,u.role);
         }
-        return json({ok:true,db,updatedAt:row?.updated_at||null,syncVersion:6,business},200,req);
+        return json({ok:true,db,updatedAt:row?.updated_at||null,syncVersion:7,business},200,req);
       }
 
       if(url.pathname==="/api/sync"&&req.method==="POST"){
@@ -291,8 +338,16 @@ export default {
 
         const deleted=b.deleted&&typeof b.deleted==="object"?b.deleted:{};
         if((u.id==="u_akash"&&business!=="akash")||(u.id!=="u_akash"&&business!=="hiren"))return json({error:"Business access denied"},403,req);
+        const policy=rolePolicy(u.role);
+        const remoteBusiness=business==="akash"?(remote?.settings?.__businesses?.akash||emptyState()):remote;
+        const incomingBusiness=business==="akash"?(incoming?.settings?.__businesses?.akash||incoming||emptyState()):incoming;
+        const sanitized=sanitizeIncomingForRole(incomingBusiness,remoteBusiness,u.role,{id:u.id,name:u.name,business});
+        const allowedDeleted={};for(const key of Object.keys(deleted||{}))if(policy.arrays.has(key))allowedDeleted[key]=deleted[key];
         let merged;
-        try{merged=mergeWorkspace(remote,incoming,business,deleted,u.id||u.email)}catch(e){if(e?.code==="BUSINESS_OWNERSHIP_MISMATCH")return json({error:e.message},403,req);throw e;}
+        try{
+          const safePayload=business==="akash"?{...emptyState(),settings:{__businesses:{akash:sanitized}}}:sanitized;
+          merged=mergeWorkspace(remote,safePayload,business,allowedDeleted,u.id||u.email);
+        }catch(e){if(e?.code==="BUSINESS_OWNERSHIP_MISMATCH")return json({error:e.message},403,req);throw e;}
         const updatedAt=new Date().toISOString();
         await env.DB.prepare(
           "INSERT INTO workspace_state(workspace_id,state_json,updated_at) VALUES(?,?,?) ON CONFLICT(workspace_id) DO UPDATE SET state_json=excluded.state_json,updated_at=excluded.updated_at"
@@ -306,7 +361,7 @@ export default {
         }else{
           responseDb=clone(merged);responseDb.settings={...(responseDb.settings||{})};delete responseDb.settings.__businesses;
         }
-        return json({ok:true,db:responseDb,updatedAt,business,syncVersion:6},200,req);
+        return json({ok:true,db:responseDb,updatedAt,business,syncVersion:7},200,req);
       }
 
       if(url.pathname==="/api/zero-two-state"&&req.method==="GET"){
@@ -317,7 +372,7 @@ export default {
         const row=await session.prepare("SELECT state_json,updated_at FROM workspace_state WHERE workspace_id=?").bind("durga-dairy").first();
         const db=row?.state_json?JSON.parse(row.state_json):emptyState();
         const akash=db?.settings?.__businesses?.akash||emptyState();
-        return json({ok:true,hiren:db,akash,updatedAt:row?.updated_at||null,syncVersion:6},200,req);
+        return json({ok:true,hiren:db,akash,updatedAt:row?.updated_at||null,syncVersion:7},200,req);
       }
 
       if(url.pathname==="/api/backup"&&req.method==="GET"){
