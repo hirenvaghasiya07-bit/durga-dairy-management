@@ -308,6 +308,29 @@ function save(){
       }
     }
   }
+  const v2=db.settings?.akashV2,prevV2=previous.settings?.akashV2;
+  if(isAkash()&&v2){
+    for(const key of ['purchases','sales','collections','slabs','vendors','purchaseRates','expenses']){
+      if(!Array.isArray(v2[key]))continue;
+      for(const record of v2[key]){
+        if(!record||record.id==null)continue;
+        const prior=(Array.isArray(prevV2?.[key])?prevV2[key]:[]).find(x=>String(x?.id)===String(record.id));
+        const changed=!!prior&&JSON.stringify(record)!==JSON.stringify(prior);
+        if(!record.businessId)record.businessId='akash';
+        if(!prior){
+          if(!record.userId)record.userId=recordActorId();
+          if(!record.createdBy)record.createdBy=recordActorId();
+          if(!record.createdAt)record.createdAt=nowAt;
+          if(!record.updatedAt)record.updatedAt=nowAt;
+        }else if(changed){
+          if(!record.userId)record.userId=prior.userId||recordActorId();
+          if(!record.createdBy)record.createdBy=prior.createdBy||record.userId;
+          if(!record.createdAt)record.createdAt=prior.createdAt||nowAt;
+          record.updatedAt=nowAt;record.updatedBy=recordActorId();
+        }
+      }
+    }
+  }
   localStorage.setItem(KEY,JSON.stringify(db));lastPersistedSnapshot=cloneCloud(db);
   if(!isZeroTwo())localStorage.setItem(pendingSyncKey(),JSON.stringify({queuedAt:new Date().toISOString(),businessId:BUSINESS_ID}));
   scheduleCloudSync();
