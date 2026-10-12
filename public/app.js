@@ -289,6 +289,8 @@ function logout(){
   const oldUser=db.currentUser;
   db.currentUser=null;
   try{ if(!isZeroTwo()) localStorage.setItem(KEY,JSON.stringify(db)); }catch(e){}
+  const sessionToken=localStorage.getItem('durga-token')||'';
+  if(CLOUD_API&&sessionToken)fetch(CLOUD_API.replace(/\/$/,'')+'/api/logout',{method:'POST',headers:{'Authorization':'Bearer '+sessionToken,'Accept':'application/json'}}).catch(()=>{});
   localStorage.removeItem('durga-token');
   cloudState={status:CLOUD_API?'connecting':'local',lastSync:null,error:null};
   closeSide();
@@ -930,6 +932,7 @@ async function zeroTwoLoad(){
       const ct=r.headers.get('content-type')||'';
       throw new Error('API returned '+r.status+' '+(ct||'non-JSON')+' instead of JSON');
     }
+    if(r.status===401){localStorage.removeItem('durga-token');db.currentUser=null;localStorage.setItem(KEY,JSON.stringify(db));login();return;}
     if(!r.ok||!j.hiren||!j.akash)throw new Error(j?.error||'Combined data not available');
     window.__zeroTwoData={hiren:j.hiren,akash:j.akash,updatedAt:j.updatedAt||null};
     renderZeroTwo();
