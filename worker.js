@@ -160,7 +160,11 @@ function mergeBusiness(remote,incoming,deleted={},business="hiren",actor="author
   const safeIncoming=normalizeBusinessRecords(incoming,business,actor);
   const tombstones=addDeletionTombstones(mergeTombstones(remote?.__tombstones,safeIncoming?.__tombstones),deleted,business,actor);
   out.__tombstones=tombstones;
-  for(const key of ARRAY_KEYS) out[key]=mergeArrayById(remote?.[key],safeIncoming?.[key],tombstones,key);
+  for(const key of ARRAY_KEYS){
+    if(business==="akash"&&["internalTransfers","customerOpeningBalances"].includes(key)){out[key]=Array.isArray(remote?.[key])?remote[key]:[];continue;}
+    if(business==="hiren"&&key==="milkPriceVarieties"){out[key]=Array.isArray(remote?.[key])?remote[key]:[];continue;}
+    out[key]=mergeArrayById(remote?.[key],safeIncoming?.[key],tombstones,key);
+  }
   out.users=mergeArrayById(remote?.users,safeIncoming?.users,tombstones,"users");
   out.settings={...(remote?.settings||{}),...(safeIncoming?.settings||{})};
   out.currentUser=null;
