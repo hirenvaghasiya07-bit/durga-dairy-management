@@ -55,7 +55,7 @@ async function authUser(req,env){
   const token=(req.headers.get("authorization")||"").replace(/^Bearer\s+/i,"").trim();
   if(!token)return null;
   const tokenHash=await sha256(token),now=new Date().toISOString();
-  return await env.DB.prepare("SELECT u.id,u.name,u.email,u.role FROM session_tokens s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.active=1").bind(tokenHash,now).first();
+  return await env.DB.prepare("SELECT u.id,u.name,u.email,u.role,s.token_hash AS tokenHash FROM session_tokens s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.active=1").bind(tokenHash,now).first();
 }
 
 function emptyState(){
@@ -247,8 +247,15 @@ export default {
         return json({token,user:{id:u.id,name:u.name,email:u.email,role:u.role}},200,req);
       }
 
+      if(url.pathname==="/api/logout"&&req.method==="POST"){
+        const u=await authUser(req,env);
+        if(!u)return json({error:"Unauthorized"},401,req);
+        await env.DB.prepare("UPDATE session_tokens SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL").bind(new Date().toISOString(),u.tokenHash).run();
+        return json({ok:true},200,req);
+      }
+
       if(url.pathname==="/api/forgot-password"&&req.method==="POST")
-        return json({ok:true,message:"Reset workflow accepted. Configure email delivery before production use."},200,req);
+        return json({error:"Password reset email delivery is not configured."},501,req);
 
       if(url.pathname==="/api/state"&&req.method==="GET"){
         const u=await authUser(req,env);
