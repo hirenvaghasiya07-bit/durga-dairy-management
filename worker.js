@@ -70,6 +70,7 @@ function emptyState(){
   };
 }
 async function ensureSeed(env){
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS session_tokens(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,created_at TEXT NOT NULL,expires_at TEXT NOT NULL,revoked_at TEXT)").run();
   const r=await env.DB.prepare("SELECT COUNT(*) AS n FROM users").first();
   if(Number(r?.n||0)>0)return;
   const defaults=[
@@ -199,7 +200,8 @@ export default {
         const u=await env.DB.prepare("SELECT id,name,email,role,active,password_hash,password_salt FROM users WHERE lower(email)=? AND active=1").bind(email).first();
         if(!u||!(await verifyPassword(String(b.password||""),u.password_salt,u.password_hash)))
           return json({error:"Invalid login"},401,req);
-        return json({token:await tokenFor(env,u.email),user:{id:u.id,name:u.name,email:u.email,role:u.role}},200,req);
+        const token=await issueSession(env,u);
+        return json({token,user:{id:u.id,name:u.name,email:u.email,role:u.role}},200,req);
       }
 
       if(url.pathname==="/api/forgot-password"&&req.method==="POST")
