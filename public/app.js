@@ -1083,7 +1083,7 @@ async function zeroTwoLoad(){
 function zeroTwoNum(v){return Number(v||0)}
 function zeroTwoSum(arr,key){return (arr||[]).reduce((a,x)=>a+zeroTwoNum(x?.[key]),0)}
 function zeroTwoSourceData(source){const z=window.__zeroTwoData||{};return source==='hiren'?z.hiren:source==='akash'?z.akash:{}}
-function zeroTwoInRange(x,from,to){const d=String(x?.date||x?.month||'').slice(0,10);return (!from||d>=from)&&(!to||d<=to)}
+function zeroTwoInRange(x,from,to){let d=String(x?.date||'').slice(0,10);if(!d&&x?.month)d=String(x.month).slice(0,7)+'-01';else if(d.length===7)d+='-01';return (!from||d>=from)&&(!to||d<=to)}
 function zeroTwoStats(source,from='',to=''){
   const d=zeroTwoSourceData(source),salesAll=(d.sales||[]),customerSalesAll=source==='akash'?[]:(d.customerSales||[]),milkAll=(d.milk||[]),stockAll=(d.stockPurchases||[]),expensesAll=(d.expenses||[]),collectionsAll=(d.collections||[]),customerPaymentsAll=source==='akash'?[]:(d.customerPayments||[]),customers=source==='akash'?[]:(d.customers||[]);
   const sales=salesAll.filter(x=>zeroTwoInRange(x,from,to)),customerSales=customerSalesAll.filter(x=>zeroTwoInRange(x,from,to)),milk=milkAll.filter(x=>zeroTwoInRange(x,from,to)),stock=stockAll.filter(x=>zeroTwoInRange(x,from,to)),expenses=expensesAll.filter(x=>zeroTwoInRange(x,from,to)),collections=collectionsAll.filter(x=>zeroTwoInRange(x,from,to)),customerPayments=customerPaymentsAll.filter(x=>zeroTwoInRange(x,from,to));
