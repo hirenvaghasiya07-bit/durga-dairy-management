@@ -74,6 +74,18 @@ function mergeCloudDB(local,remote){
   const localSafe=ensureStableRecordIds(local||{}),remoteSafe=ensureStableRecordIds(remote||{});
   const out=Object.assign(base,remoteSafe,localSafe);
   out.settings={...(remoteSafe?.settings||{}),...(localSafe?.settings||{})};
+  const remoteAkashV2=remoteSafe?.settings?.akashV2||{},localAkashV2=localSafe?.settings?.akashV2||{};
+  if(Object.keys(remoteAkashV2).length||Object.keys(localAkashV2).length){
+    const av={...remoteAkashV2,...localAkashV2},nestedTombs=mergeTombstones(remoteAkashV2.__tomb,localAkashV2.__tomb);
+    for(const key of ['purchases','sales','collections','slabs','vendors','purchaseRates','expenses']){
+      const map=new Map(),dead=nestedTombs[key]||{};
+      for(const x of Array.isArray(remoteAkashV2[key])?remoteAkashV2[key]:[])if(x?.id!=null&&!dead[String(x.id)])map.set(String(x.id),x);
+      for(const x of Array.isArray(localAkashV2[key])?localAkashV2[key]:[])if(x?.id!=null&&!dead[String(x.id)]){const id=String(x.id);map.set(id,map.has(id)?newerRecord(x,map.get(id)):x)}
+      const noId=[...(Array.isArray(remoteAkashV2[key])?remoteAkashV2[key]:[]).filter(x=>x?.id==null),...(Array.isArray(localAkashV2[key])?localAkashV2[key]:[]).filter(x=>x?.id==null)];
+      av[key]=[...map.values(),...noId];
+    }
+    av.__tomb=nestedTombs;out.settings.akashV2=av;
+  }
   out.__tombstones=mergeTombstones(remoteSafe?.__tombstones,localSafe?.__tombstones);
   for(const key of SYNC_ARRAYS){
     const lm=Array.isArray(localSafe?.[key])?localSafe[key]:[];
