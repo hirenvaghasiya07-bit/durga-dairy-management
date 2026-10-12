@@ -308,3 +308,5 @@ export default {
     }
   }
 };
+
+export { mergeTombstones, addDeletionTombstones, mergeArrayById, normalizeBusinessRecords, mergeBusiness, mergeWorkspace };
