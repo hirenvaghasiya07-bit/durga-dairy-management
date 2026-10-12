@@ -137,13 +137,32 @@ function mergeArrayById(remote,incoming,tombstones={},entity=""){
   const dead=tombstones?.[entity]||{};
   return Array.from(map.values()).filter(x=>!Object.prototype.hasOwnProperty.call(dead,String(x.id)));
 }
+function normalizeBusinessRecords(incoming,business,actor){
+  const safe=clone(incoming||emptyState());
+  for(const key of ARRAY_KEYS){
+    if(!Array.isArray(safe[key]))continue;
+    if(business==="akash"&&["internalTransfers","customerOpeningBalances"].includes(key))continue;
+    if(business==="hiren"&&key==="milkPriceVarieties")continue;
+    safe[key]=safe[key].map(record=>{
+      if(!record||record.id==null)return record;
+      const existing=String(record.businessId||"").toLowerCase();
+      if(existing&&existing!==business){
+        const error=new Error("Record "+String(record.id)+" belongs to "+existing+" and cannot be synced into "+business+". Local data was preserved.");
+        error.code="BUSINESS_OWNERSHIP_MISMATCH";throw error;
+      }
+      return {...record,businessId:business,userId:record.userId||actor};
+    });
+  }
+  return safe;
+}
 function mergeBusiness(remote,incoming,deleted={},business="hiren",actor="authorized-user"){
   const out=clone(remote||emptyState());
-  const tombstones=addDeletionTombstones(mergeTombstones(remote?.__tombstones,incoming?.__tombstones),deleted,business,actor);
+  const safeIncoming=normalizeBusinessRecords(incoming,business,actor);
+  const tombstones=addDeletionTombstones(mergeTombstones(remote?.__tombstones,safeIncoming?.__tombstones),deleted,business,actor);
   out.__tombstones=tombstones;
-  for(const key of ARRAY_KEYS) out[key]=mergeArrayById(remote?.[key],incoming?.[key],tombstones,key);
-  out.users=mergeArrayById(remote?.users,incoming?.users,tombstones,"users");
-  out.settings={...(remote?.settings||{}),...(incoming?.settings||{})};
+  for(const key of ARRAY_KEYS) out[key]=mergeArrayById(remote?.[key],safeIncoming?.[key],tombstones,key);
+  out.users=mergeArrayById(remote?.users,safeIncoming?.users,tombstones,"users");
+  out.settings={...(remote?.settings||{}),...(safeIncoming?.settings||{})};
   out.currentUser=null;
   out.version=Math.max(Number(remote?.version||0),Number(incoming?.version||0),6);
   return out;
@@ -241,7 +260,8 @@ export default {
 
         const deleted=b.deleted&&typeof b.deleted==="object"?b.deleted:{};
         if((u.id==="u_akash"&&business!=="akash")||(u.id!=="u_akash"&&business!=="hiren"))return json({error:"Business access denied"},403,req);
-        const merged=mergeWorkspace(remote,incoming,business,deleted,u.name||u.email);
+        let merged;
+        try{merged=mergeWorkspace(remote,incoming,business,deleted,u.id||u.email)}catch(e){if(e?.code==="BUSINESS_OWNERSHIP_MISMATCH")return json({error:e.message},403,req);throw e;}
         const updatedAt=new Date().toISOString();
         await env.DB.prepare(
           "INSERT INTO workspace_state(workspace_id,state_json,updated_at) VALUES(?,?,?) ON CONFLICT(workspace_id) DO UPDATE SET state_json=excluded.state_json,updated_at=excluded.updated_at"
