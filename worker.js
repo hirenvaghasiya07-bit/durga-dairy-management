@@ -95,20 +95,54 @@ const ARRAY_KEYS=[
 
 function clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
 
-function mergeArrayById(remote,incoming){
+function tombstoneTime(value){
+  if(typeof value==="string")return value;
+  return value?.deletedAt||value?.deleted_at||value?.at||"";
+}
+function mergeTombstones(...sources){
+  const out={};
+  for(const source of sources){
+    for(const [entity,records] of Object.entries(source||{})){
+      out[entity]=out[entity]||{};
+      for(const [id,value] of Object.entries(records||{})){
+        const prev=out[entity][id];
+        const nextTime=tombstoneTime(value),prevTime=tombstoneTime(prev);
+        if(!prev||nextTime>=prevTime)out[entity][id]=clone(value);
+      }
+    }
+  }
+  return out;
+}
+function addDeletionTombstones(tombstones,deleted,business,actor){
+  const out=mergeTombstones(tombstones);
+  for(const [entity,ids] of Object.entries(deleted||{})){
+    if(!Array.isArray(ids))continue;
+    out[entity]=out[entity]||{};
+    for(const rawId of ids){
+      const id=String(rawId||"");
+      if(!id)continue;
+      const previous=out[entity][id];
+      out[entity][id]={recordId:id,businessId:business,entityType:entity,deletedAt:tombstoneTime(previous)||new Date().toISOString(),deletedBy:actor||"authorized-user",deletionVersion:6};
+    }
+  }
+  return out;
+}
+function mergeArrayById(remote,incoming,tombstones={},entity=""){
   const map=new Map();
   for(const x of Array.isArray(remote)?remote:[]) if(x&&x.id!=null) map.set(String(x.id),x);
   for(const x of Array.isArray(incoming)?incoming:[]) if(x&&x.id!=null) map.set(String(x.id),x);
-  return Array.from(map.values());
+  const dead=tombstones?.[entity]||{};
+  return Array.from(map.values()).filter(x=>!Object.prototype.hasOwnProperty.call(dead,String(x.id)));
 }
-
-function mergeBusiness(remote,incoming){
+function mergeBusiness(remote,incoming,deleted={},business="hiren",actor="authorized-user"){
   const out=clone(remote||emptyState());
-  for(const key of ARRAY_KEYS) out[key]=mergeArrayById(remote?.[key],incoming?.[key]);
-  out.users=mergeArrayById(remote?.users,incoming?.users);
+  const tombstones=addDeletionTombstones(mergeTombstones(remote?.__tombstones,incoming?.__tombstones),deleted,business,actor);
+  out.__tombstones=tombstones;
+  for(const key of ARRAY_KEYS) out[key]=mergeArrayById(remote?.[key],incoming?.[key],tombstones,key);
+  out.users=mergeArrayById(remote?.users,incoming?.users,tombstones,"users");
   out.settings={...(remote?.settings||{}),...(incoming?.settings||{})};
   out.currentUser=null;
-  out.version=Math.max(Number(remote?.version||0),Number(incoming?.version||0),5);
+  out.version=Math.max(Number(remote?.version||0),Number(incoming?.version||0),6);
   return out;
 }
 
@@ -119,12 +153,12 @@ function mergeBusiness(remote,incoming){
   - A stale Akash snapshot can never overwrite Hiren.
   - A stale Hiren snapshot can never overwrite Akash.
 */
-function mergeWorkspace(remote,incoming,business){
+function mergeWorkspace(remote,incoming,business,deleted={},actor="authorized-user"){
   const base=clone(remote||emptyState());
   if(business==="akash"){
     const remoteAkash=base?.settings?.__businesses?.akash||emptyState();
     const incomingAkash=incoming?.settings?.__businesses?.akash||incoming||emptyState();
-    const mergedAkash=mergeBusiness(remoteAkash,incomingAkash);
+    const mergedAkash=mergeBusiness(remoteAkash,incomingAkash,deleted,"akash",actor);
     base.settings={...(base.settings||{}),__businesses:{...(base.settings?.__businesses||{}),akash:mergedAkash}};
     base.version=Math.max(Number(base.version||0),Number(mergedAkash.version||0),5);
     base.currentUser=null;
@@ -134,7 +168,7 @@ function mergeWorkspace(remote,incoming,business){
   const incomingHiren=clone(incoming||{});
   const preservedBusinesses=clone(base?.settings?.__businesses||{});
   delete incomingHiren?.settings?.__businesses;
-  const merged=mergeBusiness(base,incomingHiren);
+  const merged=mergeBusiness(base,incomingHiren,deleted,"hiren",actor);
   merged.settings={...(merged.settings||{}),__businesses:preservedBusinesses};
   merged.currentUser=null;
   return merged;
@@ -191,7 +225,8 @@ export default {
         const row=await session.prepare("SELECT state_json FROM workspace_state WHERE workspace_id=?").bind("durga-dairy").first();
         const remote=row?.state_json?JSON.parse(row.state_json):emptyState();
 
-        const merged=mergeWorkspace(remote,incoming,business);
+        const deleted=b.deleted&&typeof b.deleted==="object"?b.deleted:{};
+        const merged=mergeWorkspace(remote,incoming,business,deleted,u.name||u.email);
         const updatedAt=new Date().toISOString();
         await env.DB.prepare(
           "INSERT INTO workspace_state(workspace_id,state_json,updated_at) VALUES(?,?,?) ON CONFLICT(workspace_id) DO UPDATE SET state_json=excluded.state_json,updated_at=excluded.updated_at"
