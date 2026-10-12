@@ -26,8 +26,17 @@ window.renderZeroTwo=function(source,from=window.__zeroFrom||'',to=window.__zero
  const business=(name,x)=>'<div class="notice"><b>'+name+'</b><div style="display:grid;gap:5px;margin-top:8px"><div>Sales: <b>'+money(x.salesTotal)+'</b></div><div>Milk / Saleable: <b>'+Number(x.milkSold||0).toFixed(2)+' L</b></div><div>Purchase: <b>'+money(x.purchaseTotal)+'</b></div><div>Collection: <b>'+money(x.collectionTotal)+'</b></div><div>Vendor Payable: <b>'+money(x.payable)+'</b></div><div>Expenses: <b>'+money(x.expenseTotal)+'</b></div><div>Profit / Loss: <b>'+money(x.profit)+'</b></div><div>Cash Position: <b>'+money(x.cashAvailable)+'</b></div></div></div>';
  const ak=source==='akash'||source==='all'?a:null;
  const inRange=x=>(!from||String(x.date||'')>=from)&&(!to||String(x.date||'')<=to);
- const akRecent=ak?[...(ak.akashV2?.sales||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Daily Sale',description:x.slabName,amount:(Number(x.saleableQty||0)*Number(x.rate||0))})),...(ak.akashV2?.purchases||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Milk Purchase',description:'Main Vendor',amount:(Number(x.vendorMorning||0)+Number(x.vendorEvening||0))*Number(x.rate||0)})),...(ak.akashV2?.collections||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Bill Collection',description:x.note||'Bulk collection',amount:Number(x.amount||0)}))]:[];
- const hr=(source==='akash'?[]:(oldStats('hiren',from,to).sales||[]).map(x=>({date:x.date,source:'Hiren',kind:'Sale',description:x.product||'Sale',amount:Number(x.amount||0)})));
+ const akRecent=ak?[...(ak.akashV2?.sales||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Daily Sale',description:x.slabName,amount:(Number(x.saleableQty||0)*Number(x.rate||0))})),...(ak.akashV2?.purchases||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Milk Purchase',description:'Main Vendor',amount:(Number(x.vendorMorning||0)+Number(x.vendorEvening||0))*Number(x.rate||0)})),...(ak.akashV2?.collections||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Bill Collection',description:x.note||'Bulk collection',amount:Number(x.amount||0)})),...(ak.akashV2?.expenses||[]).filter(inRange).map(x=>({date:x.date,source:'Akash',kind:'Expense',description:x.category||x.description||'Expense',amount:-Number(x.amount||0)}))]:[];
+ const hs=oldStats('hiren',from,to);
+ const hr=(source==='akash'?[]:[
+ ...(hs.sales||[]).map(x=>({date:x.date,source:'Hiren',kind:'Sale',description:x.product||'Sale',amount:Number(x.amount||0)})),
+ ...(hs.customerSales||[]).map(x=>({date:x.date,source:'Hiren',kind:'Customer Bill',description:x.customerId||'Customer',amount:Number(x.amount||0)})),
+ ...(hs.collections||[]).map(x=>({date:x.date,source:'Hiren',kind:'Bill Collection',description:x.note||x.customerName||'Collection',amount:Number(x.amount||0)})),
+ ...(hs.customerPayments||[]).map(x=>({date:x.date||x.month,source:'Hiren',kind:'Customer Payment',description:x.customerId||x.note||'Payment',amount:Number(x.amount||0)})),
+ ...(hs.milk||[]).map(x=>({date:x.date,source:'Hiren',kind:'Milk Purchase',description:x.type||'Milk Purchase',amount:-Number(x.total||0)})),
+ ...(hs.stock||[]).map(x=>({date:x.date,source:'Hiren',kind:'Stock Purchase',description:x.item||'Stock',amount:-Number(x.total||0)})),
+ ...(hs.expenses||[]).map(x=>({date:x.date,source:'Hiren',kind:'Expense',description:x.category||x.description||'Expense',amount:-Number(x.amount||0)}))
+ ]);
  const transferList=(source==='akash'?[]:(globalThis.__zeroTwoData?.hiren?.internalTransfers||[]).filter(inRange));
  const transferRows=transferList.map(x=>({date:x.date,source:'Hiren',kind:'Internal Transfer',description:'Akash → Hiren • '+Number(x.quantity||0).toFixed(2)+' L • '+money(Number(x.amount||0))+' (separate ledger)',amount:0}));
  const transferTotal=transferList.reduce((s,x)=>s+Number(x.amount||0),0);
