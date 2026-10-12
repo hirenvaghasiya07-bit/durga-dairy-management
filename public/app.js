@@ -87,7 +87,7 @@ function cloudSchemaReady(){return localStorage.getItem(syncSchemaKey())===CLOUD
 function setCloudSchema(){localStorage.setItem(syncSchemaKey(),CLOUD_SYNC_SCHEMA)}
 async function cloudStateFetch(base,token){
   const r=await fetch(base+'/api/state?ts='+Date.now()+'&business='+encodeURIComponent(BUSINESS_ID==='akash'?'akash':'hiren'),{method:'GET',headers:{'Authorization':'Bearer '+token,'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
-  if(!r.ok)throw new Error('Cloud read failed ('+r.status+')');
+  if(r.status===401){localStorage.removeItem('durga-token');const e=new Error('Cloud session expired or invalid. Please log in again.');e.status=401;throw e;}if(!r.ok){const e=new Error('Cloud read failed ('+r.status+')');e.status=r.status;throw e;}
   return await r.json();
 }
 async function cloudSync(){
@@ -152,6 +152,7 @@ async function cloudSync(){
     cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
   }catch(e){
     cloudState={status:'offline',lastSync:cloudState.lastSync,error:e.message};
+    if(e.status===401){db.currentUser=null;localStorage.setItem(KEY,JSON.stringify(db));login();}
   }
 }
 async function cloudPull(){
@@ -185,6 +186,7 @@ async function cloudPull(){
     return false;
   }catch(e){
     cloudState={status:'offline',lastSync:cloudState.lastSync,error:e.message};
+    if(e.status===401){db.currentUser=null;localStorage.setItem(KEY,JSON.stringify(db));login();}
     return false;
   }
 }
@@ -240,7 +242,23 @@ async function init(){
 }
 function login(){const options=db.users.filter(u=>u.active).map(u=>'<option value="'+u.id+'">'+esc(u.name)+' • '+esc(u.role)+'</option>').join('');document.getElementById('root').innerHTML='<div class="login"><div class="loginbox"><h1>Durga Dairy • '+businessName()+'</h1><p>Online Management System</p><div class="notice">Sign in with your own account. Every entry is recorded with the member name and time.</div><div class="field"><label>Login</label><select id="loginUser">'+options+'</select></div><div class="field"><label>Password / PIN</label><input id="loginPin" type="password" autocomplete="current-password" placeholder="Password"></div><button class="btn" style="width:100%;margin-top:16px" onclick="doLogin()">Login</button><button class="linkbtn" onclick="forgotPassword()">Forgot Password?</button><p class="small">First-run demo: Hiren 1234 • Brother 3333 • Family 1111 • Staff 2222</p></div></div>'}
 function forgotPassword(){modal('Forgot Password','<p class="muted">Enter your account email. In production this will send a secure reset link.</p><div class="field"><label>Email</label><input id="resetEmail" type="email" placeholder="you@example.com"></div>',async()=>{const email=val('resetEmail');if(!email)return alert('Email required.');if(CLOUD_API){try{const r=await fetch(CLOUD_API.replace(/\/$/, '')+'/api/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});alert(r.ok?'If the account exists, a reset link has been sent.':'Reset request failed.')}catch(e){alert('Reset service unavailable.')}}else alert('Password reset is ready for cloud deployment; connect the online API to send the secure reset link.');closeModal()})}
-async function doLogin(){const id=document.getElementById('loginUser').value,p=document.getElementById('loginPin').value,u=db.users.find(x=>x.id===id);if(!u||u.pin!==p)return alert('Wrong password.');if(CLOUD_API){try{const r=await fetch(CLOUD_API.replace(/\/$/, '')+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:u.email,password:p,workspaceId:'durga-dairy-'+BUSINESS_ID})});if(r.ok){const j=await r.json();localStorage.setItem('durga-token',j.token||'')}}catch(e){cloudState={status:'offline',error:e.message}}}db.currentUser=id;if(isZeroTwo()){save();zeroTwoLoad();return;}save();audit('LOGIN','session',id,null,{name:u.name});render('dashboard');cloudSync()}
+async function doLogin(){
+  const id=document.getElementById('loginUser')?.value,p=document.getElementById('loginPin')?.value,u=db.users.find(x=>x.id===id);
+  if(!u||u.pin!==p)return alert('Wrong password.');
+  if(CLOUD_API){
+    try{
+      const r=await fetch(CLOUD_API.replace(/\/$/,'')+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:u.email,password:p,workspaceId:'durga-dairy-'+BUSINESS_ID})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok){
+        if(r.status===401||r.status===403){cloudState={status:'offline',lastSync:cloudState.lastSync,error:j.error||'Cloud login rejected'};return alert('Cloud login failed: '+(j.error||('HTTP '+r.status))+'. Your local data has been preserved.');}
+        cloudState={status:'offline',lastSync:cloudState.lastSync,error:j.error||('HTTP '+r.status)};
+      }else if(j.token){localStorage.setItem('durga-token',j.token);cloudState={status:'connecting',lastSync:cloudState.lastSync,error:null};}
+    }catch(e){cloudState={status:'offline',lastSync:cloudState.lastSync,error:e.message};}
+  }
+  db.currentUser=id;save();
+  if(isZeroTwo()){zeroTwoLoad();return;}
+  audit('LOGIN','session',id,null,{name:u.name});render('dashboard');cloudSync();
+}
 function logout(){
   const oldUser=db.currentUser;
   db.currentUser=null;
