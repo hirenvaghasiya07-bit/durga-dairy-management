@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: "22"
       - name: Check frontend syntax
-        run: node --check public/app.js
+        run: node -e "const fs=require('node:fs'); const vm=require('node:vm'); new vm.Script(fs.readFileSync('public/app.js','utf8'), { filename: 'public/app.js' });"
       - name: Check Worker syntax
         run: node --check worker.js
       - name: Run sync safety tests
