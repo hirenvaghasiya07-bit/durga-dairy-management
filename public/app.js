@@ -163,8 +163,13 @@ async function cloudPull(){
     if(j.db){
       const currentUser=db.currentUser;
       if(!cloudSchemaReady()){
-        replaceFromCloud(j.db);
-        setCloudSchema();
+        const business=cloudBusiness(j.db);
+        if(business)db=mergeCloudDB(db,business);
+        db.currentUser=currentUser;
+        db.businessId=BUSINESS_ID;
+        localStorage.setItem(KEY,JSON.stringify(db));
+        localStorage.setItem(pendingSyncKey(),JSON.stringify({queuedAt:new Date().toISOString(),businessId:BUSINESS_ID,migration:true}));
+        window.__durgaMigrationReviewRequired=true;
       }else{
         const business=cloudBusiness(j.db);
         if(business)db=mergeCloudDB(db,business);
@@ -174,6 +179,7 @@ async function cloudPull(){
         window.__cloudSnapshot=cloneCloud(db);
       }
       cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
+      if(localStorage.getItem(pendingSyncKey()))await cloudSync();
       return true;
     }
     return false;
