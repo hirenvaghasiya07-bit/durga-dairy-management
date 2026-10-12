@@ -295,19 +295,20 @@ function addAkashMilkSale(){
   db.milkPriceVarieties=db.milkPriceVarieties||[];
   const date=iso(),rates=db.milkPriceVarieties.filter(x=>x.active!==false&&String(x.effectiveDate||'0000-00-00')<=date).sort((a,b)=>String(a.effectiveDate).localeCompare(String(b.effectiveDate)));
   if(!rates.length){if(confirm('No active milk price varieties are available. Open Milk Price Varieties now?'))renderMilkPrices();else alert('Add at least one active milk price variety before entering Akash milk sales.');return;}
-  const batchId=uid();
+  const batchId=uid();window.__akashMilkSaleRates=rates;
   const lines=rates.map((x,i)=>'<tr><td>'+esc(x.name)+'</td><td>'+money(x.rate)+'</td><td><input id="akashMilkQty_'+i+'" type="number" min="0" step="0.01" value="0" oninput="akashMilkSaleTotals()"></td><td><span id="akashMilkAmt_'+i+'">₹0</span></td></tr>').join('');
   modal('Akash • Multi-rate Milk Sale','<div class="formgrid"><div class="field"><label>Sale Date</label><input id="akashMilkDate" type="date" value="'+date+'"></div><div class="field"><label>Payment Mode</label><select id="akashMilkMode"><option>Cash</option><option>UPI</option><option>Bank</option><option>Credit</option><option>Mixed</option></select></div><div class="field span4"><div class="notice">Enter actual litres only. No water percentage or slab calculation is used. Each line keeps its own saved rate and stable record ID.</div></div></div><div class="tablewrap"><table class="table"><tr><th>Variety</th><th>Rate</th><th>Actual Quantity (L)</th><th>Line Amount</th></tr>'+lines+'</table></div><div class="grid" style="margin-top:12px"><div class="card metric"><div class="label">Total Quantity</div><div id="akashMilkTotalQty" class="value">0 L</div></div><div class="card metric"><div class="label">Total Sales</div><div id="akashMilkTotalAmt" class="value">₹0</div></div></div>',()=>{
     const selected=rates.map((x,i)=>({...x,qty:num(val('akashMilkQty_'+i))})).filter(x=>x.qty>0);
     if(!selected.length)return alert('Enter a positive quantity for at least one milk price variety.');
     const chosenDate=val('akashMilkDate')||date;if(db.sales.some(x=>x.batchId===batchId))return alert('This batch has already been saved.');
+    if(selected.some(x=>String(x.effectiveDate||'0000-00-00')>chosenDate))return alert('One or more selected prices were not effective on this historical date. Add/use a rate effective on or before the sale date.');
     const totalQty=selected.reduce((a,x)=>a+x.qty,0),totalAmt=selected.reduce((a,x)=>a+x.qty*x.rate,0),mode=val('akashMilkMode'),createdAt=new Date().toISOString();
     for(const x of selected){const r={id:uid(),batchId,date:chosenDate,product:'Milk',saleKey:'milk',priceVarietyId:x.id,priceVarietyName:x.name,qty:x.qty,rate:num(x.rate),amount:x.qty*num(x.rate),paymentMode:mode,userId:user()?.id||'',businessId:'akash',createdAt,updatedAt:createdAt};db.sales.push(r);audit('CREATE','Daily Sale',r.id,null,r);}
     db.settings.lastAkashMilkSaleBatch={batchId,date:chosenDate,totalQty,totalAmt,createdAt};save();closeModal();render('sales');
   });
 }
 function akashMilkSaleTotals(){
-  const rates=(db.milkPriceVarieties||[]).filter(x=>x.active!==false&&String(x.effectiveDate||'0000-00-00')<=(val('akashMilkDate')||iso())).sort((a,b)=>String(a.effectiveDate).localeCompare(String(b.effectiveDate)));
+  const rates=window.__akashMilkSaleRates||[];
   let qty=0,amount=0;rates.forEach((x,i)=>{const q=num(val('akashMilkQty_'+i)),a=q*num(x.rate);qty+=q;amount+=a;const el=document.getElementById('akashMilkAmt_'+i);if(el)el.textContent=money(a)});
   const q=document.getElementById('akashMilkTotalQty'),a=document.getElementById('akashMilkTotalAmt');if(q)q.textContent=qty.toFixed(2)+' L';if(a)a.textContent=money(amount);
 }
