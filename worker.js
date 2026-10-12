@@ -192,7 +192,7 @@ export default {
       await ensureSeed(env);
 
       if(url.pathname==="/api/health")
-        return json({ok:true,service:"Durga Dairy",cloudflare:true,syncVersion:5},200,req);
+        return json({ok:true,service:"Durga Dairy",cloudflare:true,syncVersion:6},200,req);
 
       if(url.pathname==="/api/login"&&req.method==="POST"){
         const b=await readBody(req);
@@ -240,6 +240,7 @@ export default {
         const remote=row?.state_json?JSON.parse(row.state_json):emptyState();
 
         const deleted=b.deleted&&typeof b.deleted==="object"?b.deleted:{};
+        if((u.id==="u_akash"&&business!=="akash")||(u.id!=="u_akash"&&business!=="hiren"))return json({error:"Business access denied"},403,req);
         const merged=mergeWorkspace(remote,incoming,business,deleted,u.name||u.email);
         const updatedAt=new Date().toISOString();
         await env.DB.prepare(
@@ -251,6 +252,9 @@ export default {
       }
 
       if(url.pathname==="/api/zero-two-state"&&req.method==="GET"){
+        const u=await authUser(req,env);
+        if(!u)return json({error:"Unauthorized"},401,req);
+        if(!["Owner","Full Access Member"].includes(u.role))return json({error:"Full access required"},403,req);
         const session=env.DB.withSession("first-primary");
         const row=await session.prepare("SELECT state_json,updated_at FROM workspace_state WHERE workspace_id=?").bind("durga-dairy").first();
         const db=row?.state_json?JSON.parse(row.state_json):emptyState();
