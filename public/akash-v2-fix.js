@@ -11,7 +11,7 @@ function formHtml(x){
   var d=x?x.date:iso(),c=x?x.category:'Home',p=x?x.paymentMode:'Cash',a=x?x.amount:'',t=x?x.description:'';
   return '<div class="formgrid">'
     +'<div class="field"><label>Date</label><input id="date" type="date" value="'+d+'"></div>'
-    +'<div class="field"><label>Category</label><select id="cat">'+opts(CATS,c)+'</select></div>'
+    +'<div class="field"><label>Category</label><select id="cat">'+opts(CATS().concat(c&&!CATS().includes(c)?[c]:[]),c)+'</select></div>'
     +'<div class="field"><label>Amount ₹</label><input id="amount" type="number" value="'+a+'"></div>'
     +'<div class="field"><label>Payment Mode</label><select id="pay">'+opts(PAYS,p)+'</select></div>'
     +'<div class="field span4"><label>Description</label><textarea id="desc">'+esc(t||'')+'</textarea></div>'
@@ -58,7 +58,7 @@ function expRender(mode,value){
   ];
   shell('expenses',
     dateFilters('expenseFilter','expenses')
-    +'<div class="sectionhead"><div><h1>Expenses</h1><div class="muted">Akash only. Filter by date and category. Records are oldest to newest.</div></div><button class="btn red" onclick="addExpense()">+ Add Expense</button></div>'
+    +'<div class="sectionhead"><div><h1>Expenses</h1><div class="muted">Akash only. Filter by date and category. Records are oldest to newest.</div></div><div class="toolbar"><button class="btn red" onclick="addExpense()">+ Add Expense</button><button class="btn gray" onclick="akExpManageCategories()">Manage Categories</button></div></div>'
     +'<div class="card section"><div class="toolbar"><label>Category</label><select id="expenseCategory" onchange="renderExpenses()"><option value="all" '+(cat==='all'?'selected':'')+'>All Categories</option>'+opts(CATS(),cat)+'</select><span class="pill green">Total: '+money(total)+'</span></div></div>'
     +tableRows(rows,cols,false)
     +'<div class="card" style="margin-top:12px;text-align:right"><b>TOTAL: '+money(total)+'</b></div>',
