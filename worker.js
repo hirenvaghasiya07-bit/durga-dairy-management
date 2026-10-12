@@ -64,7 +64,7 @@ function emptyState(){
     settings:{},
     prices:[],sales:[],collections:[],milk:[],stockPurchases:[],stockUsage:[],
     expenses:[],customers:[],vendors:[],vendorPayments:[],cashChecks:[],cashOpenings:[],
-    audit:[],customerSales:[],customerPayments:[],customerBills:[]
+    audit:[],customerSales:[],customerPayments:[],customerBills:[],customerOpeningBalances:[],internalTransfers:[],milkPriceVarieties:[],__tombstones:{}
   };
 }
 async function ensureSeed(env){
@@ -90,7 +90,7 @@ async function ensureSeed(env){
 const ARRAY_KEYS=[
   "sales","collections","milk","stockPurchases","stockUsage","expenses","customers",
   "vendors","vendorPayments","cashChecks","cashOpenings","audit","prices",
-  "customerSales","customerPayments","customerBills"
+  "customerSales","customerPayments","customerBills","customerOpeningBalances","internalTransfers","milkPriceVarieties"
 ];
 
 function clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
