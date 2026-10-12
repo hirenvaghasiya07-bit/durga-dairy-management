@@ -136,8 +136,8 @@
         const date=akashReadDate('akEditDate'),cat=editCats.find(c=>c.id===val('akEditCat'));if(!date||!cat)return alert('Select a valid date and category.');
         const q=num(val('akEditQty')),r=num(val('akEditRate'))||akashCategoryRate(cat,date),amount=q*r,cash=num(val('akEditCash')),bank=num(val('akEditBank')),other=num(val('akEditOther'));
         if(q<0)return alert('Quantity cannot be negative.');if(cash+bank+other>amount+0.01)return alert('Received amounts cannot exceed sale amount.');
-        const old=JSON.parse(JSON.stringify(item));Object.assign(item,{date,categoryId:cat.id,categoryName:cat.name,slabId:'',slabName:cat.name,actualQty:q,extraPercent:0,rate:r,saleableQty:q,amount,cashAmount:cash,bankAmount:bank,otherAmount:other,creditAmount:Math.max(0,amount-cash-bank-other),profit:amount-q*effectivePurchaseRate(date)});
-        audit('UPDATE','akashSale',item.id,old,item);saveA();closeModal();render('sales');
+        const stored=a().sales.find(x=>x.id===item.id),old=JSON.parse(JSON.stringify(stored||item)),updated=Object.assign({},stored||item,{date,categoryId:cat.id,categoryName:cat.name,slabId:'',slabName:cat.name,actualQty:q,extraPercent:0,rate:r,saleableQty:q,amount,cashAmount:cash,bankAmount:bank,otherAmount:other,creditAmount:Math.max(0,amount-cash-bank-other),profit:amount-q*effectivePurchaseRate(date)});const idx=a().sales.findIndex(x=>x.id===item.id);if(idx>=0)a().sales[idx]=updated;
+        audit('UPDATE','akashSale',item.id,old,updated);saveA();closeModal();render('sales');
       });
       setTimeout(()=>{['akEditQty','akEditRate'].forEach(id=>document.getElementById(id)?.addEventListener('input',()=>{const t=document.getElementById('akEditTotal');if(t)t.textContent=moneyA(num(val('akEditQty'))*num(val('akEditRate')))}));},20);
       return;
