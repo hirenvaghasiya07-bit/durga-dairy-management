@@ -105,7 +105,7 @@ function replaceFromCloud(remote){
   db.currentUser=currentUser;
   db.businessId=BUSINESS_ID;
   window.__cloudSnapshot=cloneCloud(db);
-  localStorage.setItem(KEY,JSON.stringify(db));
+  localStorage.setItem(KEY,JSON.stringify(db));lastPersistedSnapshot=cloneCloud(db);
 }
 function syncSchemaKey(){return KEY+'::cloud-schema'}
 function pendingSyncKey(){return KEY+'::pending-sync'}
@@ -145,7 +145,7 @@ async function cloudSync(){
       const remoteBusiness=cloudBusiness(remote);
       if(remoteBusiness)db=mergeCloudDB(db,remoteBusiness);
       db.currentUser=currentUser;
-      localStorage.setItem(KEY,JSON.stringify(db));
+      localStorage.setItem(KEY,JSON.stringify(db));lastPersistedSnapshot=cloneCloud(db);
     }
 
     let pushDB=db;
@@ -170,7 +170,7 @@ async function cloudSync(){
       if(business)db=mergeCloudDB(db,business);
       db.currentUser=current;
       db.businessId=BUSINESS_ID;
-      localStorage.setItem(KEY,JSON.stringify(db));
+      localStorage.setItem(KEY,JSON.stringify(db));lastPersistedSnapshot=cloneCloud(db);
       window.__cloudSnapshot=cloneCloud(db);
     }
     setCloudSchema();
@@ -202,7 +202,7 @@ async function cloudPull(){
         if(business)db=mergeCloudDB(db,business);
         db.currentUser=currentUser;
         db.businessId=BUSINESS_ID;
-        localStorage.setItem(KEY,JSON.stringify(db));
+        localStorage.setItem(KEY,JSON.stringify(db));lastPersistedSnapshot=cloneCloud(db);
         window.__cloudSnapshot=cloneCloud(db);
       }
       cloudState={status:'online',lastSync:new Date().toISOString(),error:null};
@@ -260,15 +260,48 @@ let db=load();
 function load(){try{const raw=localStorage.getItem(KEY);if(raw)return Object.assign(structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB)),JSON.parse(raw));const fresh=structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB));if(BUSINESS_ID==='akash'){fresh.users=fresh.users.filter(u=>u.id==='u_brother').map(u=>({...u,name:'Akash',email:'akash@durga.local'}));fresh.currentUser=null;fresh.businessId='akash'}else{fresh.businessId='hiren'}return fresh}catch(e){return structuredClone?structuredClone(defaultDB):JSON.parse(JSON.stringify(defaultDB))}}
 function ensureSalesConfig(){db.settings=db.settings||{};db.settings.salePrices=Object.assign({milk:72,buttermilk:30,ghee:1100,peda:400},db.settings.salePrices||{}); if(isAkash()) db.settings.salePrices.milk= num(db.settings.salePrices.milk||76);if(db.settings.salePrices.milk==null)db.settings.salePrices.milk=72;db.sales=(db.sales||[]).map(x=>{if(x.saleKey==='milk82'||x.saleKey==='milk72'||x.product==='Milk'){x.saleKey='milk';x.product='Milk'}if(!x.rate&&x.qty)x.rate=num(x.amount)/num(x.qty);return x});db.customers=(db.customers||[]).map(x=>{if(!x.saleKey&&x.product)x.saleKey=String(x.product).toLowerCase()==='milk'?'milk':String(x.product).toLowerCase()==='buttermilk'?'buttermilk':String(x.product).toLowerCase()==='ghee'?'ghee':String(x.product).toLowerCase()==='peda'?'peda':'other';if(!x.priceHistory&&x.rate)x.priceHistory=[{date:x.createdAt?String(x.createdAt).slice(0,10):iso(),rate:num(x.rate)}];return x})}
 ensureSalesConfig();
+db=ensureStableRecordIds(db);
+let lastPersistedSnapshot=cloneCloud(db);
 function saleProducts(){return [{key:'milk',name:'Milk',unit:'L'},{key:'buttermilk',name:'Buttermilk',unit:'L'},{key:'ghee',name:'Ghee',unit:'kg'},{key:'peda',name:'Peda',unit:'kg'},{key:'other',name:'Other',unit:'unit'}]}
 function saleLabel(key){const p=saleProducts().find(x=>x.key===key);return p?p.name:key}
 function getSaleRate(key){ensureSalesConfig();return num(db.settings.salePrices[key])}
 function setSaleRate(key,rate){ensureSalesConfig();db.settings.salePrices[key]=num(rate);save()}
 function customerRateFor(c,key,date){if(!c)return getSaleRate(key);const h=(c.priceHistory||[]).filter(x=>x.productKey===key||(!x.productKey&&c.saleKey===key)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));let rate=num(c.rate);for(const x of h){if(String(x.date)<=String(date))rate=num(x.rate)}return rate||getSaleRate(key)}
 function addCustomerPriceHistory(c,key,date,rate){c.priceHistory=c.priceHistory||[];c.priceHistory.push({id:uid(),productKey:key,date,rate:num(rate)});c.priceHistory.sort((a,b)=>String(a.date).localeCompare(String(b.date)))}
-function save(){ensureSalesConfig();db=ensureStableRecordIds(db);db.__tombstones=db.__tombstones||{};db.businessId=BUSINESS_ID||db.businessId||'hiren';localStorage.setItem(KEY,JSON.stringify(db));if(!isZeroTwo())localStorage.setItem(pendingSyncKey(),JSON.stringify({queuedAt:new Date().toISOString(),businessId:BUSINESS_ID}));scheduleCloudSync()}
+function save(){
+  ensureSalesConfig();db=ensureStableRecordIds(db);db.__tombstones=db.__tombstones||{};db.businessId=BUSINESS_ID||db.businessId||'hiren';
+  const previous=lastPersistedSnapshot||{};
+  const actor=recordActorId(),nowAt=new Date().toISOString();
+  for(const key of SYNC_ARRAYS){
+    if(key==='users')continue;
+    if(isAkash()&&['internalTransfers','customerOpeningBalances'].includes(key))continue;
+    if(!isAkash()&&key==='milkPriceVarieties')continue;
+    for(const record of Array.isArray(db[key])?db[key]:[]){
+      if(!record||record.id==null)continue;
+      const prior=(Array.isArray(previous[key])?previous[key]:[]).find(x=>String(x?.id)===String(record.id));
+      if(!record.businessId)record.businessId=BUSINESS_ID==='akash'?'akash':'hiren';
+      if(!prior){
+        if(!record.userId)record.userId=actor;
+        if(!record.createdBy)record.createdBy=actor;
+        if(!record.createdAt)record.createdAt=record.at||nowAt;
+        if(!record.updatedAt)record.updatedAt=record.at||nowAt;
+        if(key==='expenses'&&!record.paidBy)record.paidBy=user()?.name||'Unknown';
+      }else if(JSON.stringify(record)!==JSON.stringify(prior)){
+        if(!record.userId)record.userId=prior.userId||actor;
+        if(!record.createdBy)record.createdBy=prior.createdBy||record.userId;
+        if(!record.createdAt)record.createdAt=prior.createdAt||prior.at||nowAt;
+        record.updatedAt=nowAt;record.updatedBy=actor;
+        if(key==='expenses'&&!record.paidBy)record.paidBy=user()?.name||'Unknown';
+      }
+    }
+  }
+  localStorage.setItem(KEY,JSON.stringify(db));lastPersistedSnapshot=cloneCloud(db);
+  if(!isZeroTwo())localStorage.setItem(pendingSyncKey(),JSON.stringify({queuedAt:new Date().toISOString(),businessId:BUSINESS_ID}));
+  scheduleCloudSync();
+}
 function user(){return db.users.find(u=>u.id===db.currentUser)}
-function audit(action,entity,recordId,before=null,after=null){db.audit.push({id:uid(),at:new Date().toISOString(),userId:user()?.id||'system',userName:user()?.name||'System',action,entity,recordId,before,after});save()}
+function recordActorId(){return isAkash()?'u_akash':(user()?.id||'system')}
+function audit(action,entity,recordId,before=null,after=null){const actor=user();db.audit.push({id:uid(),at:new Date().toISOString(),userId:recordActorId(),userName:actor?.name||'System',action,entity,recordId,before,after,businessId:BUSINESS_ID==='akash'?'akash':'hiren',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});save()}
 function allowed(role,feature){if(role==='Owner'||role==='Full Access Member')return true;if(role==='Manager')return !['users','cashSettings'].includes(feature);if(role==='Family Member')return ['expenses'].includes(feature);if(role==='Staff')return ['sales'].includes(feature);return false}
 async function init(){
   if(!BUSINESS_ID){portalChooser();return;}
