@@ -39,6 +39,17 @@ function mergeCloudDB(local,remote){
     const noId=[...rm.filter(x=>x?.id==null),...lm.filter(x=>x?.id==null)];
     out[key]=[...map.values(),...noId];
   }
+  if(BUSINESS_ID==='akash'){
+    const la=local?.settings?.akashV2||{}, ra=remote?.settings?.akashV2||{};
+    const at=mergeTombs(la.__tomb,ra.__tomb), ao={...ra,...la,__tomb:at};
+    for(const key of ['purchases','sales','collections','slabs','vendors','purchaseRates','expenses']){
+      const lm=Array.isArray(la[key])?la[key]:[], rm=Array.isArray(ra[key])?ra[key]:[], dead=at[key]||{}, map=new Map();
+      for(const x of rm)if(x?.id!=null&&!Object.prototype.hasOwnProperty.call(dead,String(x.id)))map.set(String(x.id),x);
+      for(const x of lm)if(x?.id!=null&&!Object.prototype.hasOwnProperty.call(dead,String(x.id)))map.set(String(x.id),x);
+      ao[key]=[...map.values(),...rm.filter(x=>x?.id==null),...lm.filter(x=>x?.id==null)];
+    }
+    out.settings={...(remote?.settings||{}),...(local?.settings||{}),akashV2:ao};
+  }
   out.__tombstones=tomb;
   out.currentUser=local?.currentUser||remote?.currentUser||null;
   out.version=Math.max(num(local?.version),num(remote?.version),5);
