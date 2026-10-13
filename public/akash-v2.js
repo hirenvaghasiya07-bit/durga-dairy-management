@@ -11,6 +11,12 @@
     return a;
   }
   const a=()=>A();
+  function recordAkashDeletion(entity,id,record){
+    if(!entity||id==null)return;
+    const z=a();z.__tomb=z.__tomb||{};z.__tomb[entity]=z.__tomb[entity]||{};
+    z.__tomb[entity][String(id)]={recordId:String(id),businessId:'akash',entityType:entity,deletedAt:new Date().toISOString(),deletedBy:user()?.id||'u_akash',deletionVersion:7,recordDate:record?.date||null};
+  }
+
   const saveA=()=>{save();};
   const moneyA=n=>money(num(n));
   const today=()=>iso();
@@ -305,7 +311,7 @@
   function akashSlabManager(){const cats=akashSaleCategories(),list=cats.map(c=>'<div class="card" style="padding:10px;margin:8px 0"><div class="sectionhead"><div><b>'+esc(c.name)+'</b><div class="muted">Current rate '+moneyA(akashCategoryRate(c,today()))+'/L</div></div><button class="btn sm gray" data-id="'+c.id+'" onclick="akashSlabModal(this.dataset.id)">Edit</button></div></div>').join('');modal('Sale Categories & Prices',list+'<button class="btn green" onclick="closeModal();akashSlabModal()">+ Create Category</button>');}
   window.toggleAkashSaleDate=function(date){window.__akashSaleOpen=window.__akashSaleOpen||{};window.__akashSaleOpen[date]=!window.__akashSaleOpen[date];render('sales');};
   window.akashAddSaleForDate=function(date){window.__akashSalePresetDate=date;window.akashSaleModal();};
-  window.akashDeleteSaleDate=function(date){const rows=a().sales.filter(x=>x.date===date);if(!rows.length)return alert('No bulk sale entries found for this date.');if(!confirm('Delete all '+rows.length+' Akash bulk sale entries for '+fmtDate(date)+'? This cannot be undone.'))return;rows.forEach(x=>{const i=a().sales.findIndex(y=>y.id===x.id);if(i>=0){const old=a().sales[i];a().sales.splice(i,1);audit('DELETE','akashSale',x.id,old,null);}});saveA();render('sales');};
+  window.akashDeleteSaleDate=function(date){const rows=a().sales.filter(x=>x.date===date);if(!rows.length)return alert('No bulk sale entries found for this date.');if(!confirm('Delete all '+rows.length+' Akash bulk sale entries for '+fmtDate(date)+'? This cannot be undone.'))return;rows.forEach(x=>{const i=a().sales.findIndex(y=>String(y.id)===String(x.id));if(i>=0){const old=a().sales[i];recordAkashDeletion('sales',x.id,old);a().sales.splice(i,1);audit('DELETE','akashSale',x.id,old,null);}});saveA();render('sales');};
   function renderAkashCollections(){
     const rows=[...a().collections].sort((x,y)=>String(y.date).localeCompare(String(x.date)));
     const total=sum(rows,x=>x.amount),cash=sum(rows,x=>x.cashAmount),bank=sum(rows,x=>x.bankAmount),dates={};
@@ -361,11 +367,11 @@
   function editRow(arr,id,fn){const x=arr.find(r=>r.id===id);if(x)fn(x)}
   window.akashPurchaseModal=akashPurchaseModal;window.akashSaleModal=akashSaleModal;window.akashCollectionModal=akashCollectionModal;window.akashSlabModal=akashSlabModal;window.akashSlabManager=akashSlabManager;window.akashRateModal=akashRateModal;
   window.akashEditPurchase=id=>{const x=a().purchases.find(r=>r.id===id);if(x)akashPurchaseModal({...x,_edit:true})};
-  window.akashDeletePurchase=id=>{if(!confirm('Delete this purchase entry?'))return;const i=a().purchases.findIndex(x=>x.id===id);if(i>=0){const old=a().purchases[i];a().purchases.splice(i,1);audit('DELETE','akashPurchase',id,old,null);saveA();render('milk')}};
+  window.akashDeletePurchase=id=>{if(!confirm('Delete this purchase entry permanently from Akash sync?'))return;const i=a().purchases.findIndex(x=>String(x.id)===String(id));if(i>=0){const old=a().purchases[i];recordAkashDeletion('purchases',id,old);a().purchases.splice(i,1);audit('DELETE','akashPurchase',id,old,null);saveA();render('milk')}};
   window.akashEditSale=id=>{const x=a().sales.find(r=>r.id===id);if(x)akashSaleModal({...x,_edit:true})};
-  window.akashDeleteSale=id=>{if(!confirm('Delete this sale entry?'))return;const i=a().sales.findIndex(x=>x.id===id);if(i>=0){const old=a().sales[i];a().sales.splice(i,1);audit('DELETE','akashSale',id,old,null);saveA();render('sales')}};
+  window.akashDeleteSale=id=>{if(!confirm('Delete this sale entry permanently from Akash sync?'))return;const i=a().sales.findIndex(x=>String(x.id)===String(id));if(i>=0){const old=a().sales[i];recordAkashDeletion('sales',id,old);a().sales.splice(i,1);audit('DELETE','akashSale',id,old,null);saveA();render('sales')}};
   window.akashEditCollection=id=>{const x=a().collections.find(r=>r.id===id);if(x)akashCollectionModal({...x,_edit:true})};
-  window.akashDeleteCollection=id=>{if(!confirm('Delete this collection entry?'))return;const i=a().collections.findIndex(x=>x.id===id);if(i>=0){const old=a().collections[i];a().collections.splice(i,1);audit('DELETE','akashCollection',id,old,null);saveA();render('collections')}};
+  window.akashDeleteCollection=id=>{if(!confirm('Delete this collection entry permanently from Akash sync?'))return;const i=a().collections.findIndex(x=>String(x.id)===String(id));if(i>=0){const old=a().collections[i];recordAkashDeletion('collections',id,old);a().collections.splice(i,1);audit('DELETE','akashCollection',id,old,null);saveA();render('collections')}};
 
   window.renderSales=function(){if(isAkash())return renderAkashSales();return undefined};
   window.renderCollections=function(){if(isAkash())return renderAkashCollections();return undefined};
