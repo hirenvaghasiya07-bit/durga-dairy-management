@@ -521,7 +521,7 @@ function akashMilkProfitReportHTML(mode='all',value=''){
 function akashPickupRecord(date){db.internalTransfers=Array.isArray(db.internalTransfers)?db.internalTransfers:[];return db.internalTransfers.find(x=>String(x.date)===String(date))||null}
 function renderAkashPickupPanelHTML(){
   const date=window.__akashPickupSelectedDate||iso(),r=akashPickupRecord(date)||{};
-  return '<div class="card section" style="border-left:5px solid #2e9d57"><div class="sectionhead"><div><h2 style="margin:0">Milk Due to Hiren • Pickup from Akash Actual</h2><div class="muted">Only the two morning pickup entries are recorded. Due = Akash actual full-day purchase − Cow pickup − Buffalo pickup.</div></div></div><div class="formgrid"><div class="field"><label>Date</label><input id="akashPickupDate" type="date" value="'+esc(date)+'" onchange="changeAkashPickupDate(this.value)"></div><div class="field"><label>Morning Cow Litter (L)</label><input id="pickupCowL" type="number" min="0" step="0.01" value="'+num(r.cowLitres)+'" oninput="updateAkashPickupNumbers()"></div><div class="field"><label>Morning Buffalo Litter (L)</label><input id="pickupBuffL" type="number" min="0" step="0.01" value="'+num(r.buffLitres)+'" oninput="updateAkashPickupNumbers()"></div><div class="field"><label>Akash Actual Full-Day Purchase</label><div id="akashActualPurchase" class="notice">Loading…</div></div></div><div class="grid" style="margin-top:10px"><div class="notice">Total Pickup: <b id="akashPickupTotal">0.00 L</b></div><div class="notice">Milk Due to Hiren: <b id="akashMilkDue">0.00 L</b></div></div><div class="toolbar" style="margin-top:10px"><button class="btn green" onclick="saveAkashPickupForDate()">Save Pickup</button></div></div>';
+  return '<div class="card section" style="border-left:5px solid #2e9d57"><div class="sectionhead"><div><h2 style="margin:0">Milk Given to Hiren • Full Day</h2><div class="muted">Only these four pickup quantities are entered. Akash actual full-day purchase is calculated from Cow/Buffalo morning and evening vendor entries.</div></div></div><div class="formgrid"><div class="field"><label>Date</label><input id="akashPickupDate" type="date" value="'+esc(date)+'" onchange="changeAkashPickupDate(this.value)"></div><div class="field"><label>Cow Milk • Morning (L)</label><input id="pickupCowAM" type="number" min="0" step="0.01" value="'+num(r.cowMorning)+'" oninput="updateAkashPickupNumbers()"></div><div class="field"><label>Buffalo Milk • Morning (L)</label><input id="pickupBuffAM" type="number" min="0" step="0.01" value="'+num(r.buffMorning)+'" oninput="updateAkashPickupNumbers()"></div><div class="field"><label>Cow Milk • Evening (L)</label><input id="pickupCowPM" type="number" min="0" step="0.01" value="'+num(r.cowEvening)+'" oninput="updateAkashPickupNumbers()"></div><div class="field"><label>Buffalo Milk • Evening (L)</label><input id="pickupBuffPM" type="number" min="0" step="0.01" value="'+num(r.buffEvening)+'" oninput="updateAkashPickupNumbers()"></div><div class="field"><label>Akash Actual Full Day • Cow AM / Buffalo AM / Cow PM / Buffalo PM</label><div id="akashActualPurchase" class="notice">Loading…</div></div></div><div class="grid" style="margin-top:10px"><div class="notice">Total Milk Given to Hiren: <b id="akashPickupTotal">0.00 L</b></div><div class="notice">Akash Actual Full Day Purchase: <b id="akashActualTotal">0.00 L</b></div><div class="notice">Milk Remaining with Akash: <b id="akashMilkDue">0.00 L</b></div></div><div class="toolbar" style="margin-top:10px"><button class="btn green" onclick="saveAkashPickupForDate()">Save Pickup</button></div></div>';
 }
 async function getAkashActualPurchases(){
   const cached=window.__zeroTwoData?.akash;
@@ -538,50 +538,40 @@ async function getAkashActualPurchases(){
   return purchases;
 }
 function updateAkashPickupNumbers(){
-  const date=document.getElementById('akashPickupDate')?.value||window.__akashPickupSelectedDate||iso();
-  const cow=num(document.getElementById('pickupCowL')?.value),buff=num(document.getElementById('pickupBuffL')?.value);
-  const actual=Number(window.__akashActualByDate?.[date]||0);
-  const total=cow+buff;
-  const totalEl=document.getElementById('akashPickupTotal'),dueEl=document.getElementById('akashMilkDue');
-  if(totalEl)totalEl.textContent=total.toFixed(2)+' L';
-  if(dueEl)dueEl.textContent=(actual-total).toFixed(2)+' L';
+  const cowAM=num(document.getElementById('pickupCowAM')?.value),buffAM=num(document.getElementById('pickupBuffAM')?.value),cowPM=num(document.getElementById('pickupCowPM')?.value),buffPM=num(document.getElementById('pickupBuffPM')?.value);
+  const date=document.getElementById('akashPickupDate')?.value||window.__akashPickupSelectedDate||iso(),actual=window.__akashActualByDate?.[date]||{};
+  const pickup=cowAM+buffAM+cowPM+buffPM,actualTotal=num(actual.cowAM)+num(actual.buffAM)+num(actual.cowPM)+num(actual.buffPM),remaining=actualTotal-pickup;
+  const el=document.getElementById('akashPickupTotal');if(el)el.textContent=pickup.toFixed(2)+' L';
+  const ae=document.getElementById('akashActualTotal');if(ae)ae.textContent=actualTotal.toFixed(2)+' L';
+  const due=document.getElementById('akashMilkDue');if(due)due.textContent=remaining.toFixed(2)+' L';
 }
 async function refreshAkashPickupSummary(date){
   try{
-    const rows=await getAkashActualPurchases();
-    window.__akashActualByDate=window.__akashActualByDate||{};
-    window.__akashActualByDate[date]=rows.filter(x=>String(x.date)===String(date)).reduce((s,x)=>s+num(x.vendorMorning)+num(x.vendorEvening),0);
+    const rows=await getAkashActualPurchases(),actual=rows.filter(x=>String(x.date)===String(date)).reduce((s,x)=>({
+      cowAM:s.cowAM+num(x.cowMorning??x.vendorMorning),buffAM:s.buffAM+num(x.buffMorning),cowPM:s.cowPM+num(x.cowEvening??x.vendorEvening),buffPM:s.buffPM+num(x.buffEvening)
+    }),{cowAM:0,buffAM:0,cowPM:0,buffPM:0});
+    window.__akashActualByDate=window.__akashActualByDate||{};window.__akashActualByDate[date]=actual;
     const el=document.getElementById('akashActualPurchase');
-    if(el)el.textContent=window.__akashActualByDate[date].toFixed(2)+' L';
+    if(el)el.textContent='Cow AM '+actual.cowAM.toFixed(2)+' L • Buffalo AM '+actual.buffAM.toFixed(2)+' L • Cow PM '+actual.cowPM.toFixed(2)+' L • Buffalo PM '+actual.buffPM.toFixed(2)+' L';
     updateAkashPickupNumbers();
   }catch(e){
-    const el=document.getElementById('akashActualPurchase');
-    if(el)el.textContent='Unavailable';
-    const due=document.getElementById('akashMilkDue');
-    if(due)due.textContent='Actual purchase unavailable';
+    const el=document.getElementById('akashActualPurchase');if(el)el.textContent='Actual purchase unavailable';
+    const due=document.getElementById('akashMilkDue');if(due)due.textContent='Actual purchase unavailable';
   }
 }
 function changeAkashPickupDate(date){
-  window.__akashPickupSelectedDate=date||iso();
-  const r=akashPickupRecord(window.__akashPickupSelectedDate)||{};
-  const cow=document.getElementById('pickupCowL'),buff=document.getElementById('pickupBuffL');
-  if(cow)cow.value=num(r.cowLitres);
-  if(buff)buff.value=num(r.buffLitres);
+  window.__akashPickupSelectedDate=date||iso();const r=akashPickupRecord(window.__akashPickupSelectedDate)||{};
+  [['pickupCowAM','cowMorning'],['pickupBuffAM','buffMorning'],['pickupCowPM','cowEvening'],['pickupBuffPM','buffEvening']].forEach(([id,key])=>{const el=document.getElementById(id);if(el)el.value=num(r[key])});
   refreshAkashPickupSummary(window.__akashPickupSelectedDate);
 }
 function saveAkashPickupForDate(){
-  const date=document.getElementById('akashPickupDate')?.value||iso();
-  const cowLitres=num(document.getElementById('pickupCowL')?.value),buffLitres=num(document.getElementById('pickupBuffL')?.value);
-  if(cowLitres<0||buffLitres<0)return alert('Pickup litres cannot be negative.');
+  const date=document.getElementById('akashPickupDate')?.value||iso(),cowMorning=num(document.getElementById('pickupCowAM')?.value),buffMorning=num(document.getElementById('pickupBuffAM')?.value),cowEvening=num(document.getElementById('pickupCowPM')?.value),buffEvening=num(document.getElementById('pickupBuffPM')?.value);
+  if([cowMorning,buffMorning,cowEvening,buffEvening].some(x=>x<0))return alert('Pickup litres cannot be negative.');
   db.internalTransfers=Array.isArray(db.internalTransfers)?db.internalTransfers:[];
-  let r=db.internalTransfers.find(x=>String(x.date)===String(date));
-  const old=r?{...r}:null;
-  if(r){r.cowLitres=cowLitres;r.buffLitres=buffLitres;r.updatedAt=new Date().toISOString();}
-  else{r={id:uid(),date,cowLitres,buffLitres,createdAt:new Date().toISOString()};db.internalTransfers.push(r);}
-  window.__akashPickupSelectedDate=date;
-  audit(old?'UPDATE':'CREATE','Milk Due to Hiren / Akash Pickup',r.id,old,r);
-  save();
-  refreshAkashPickupSummary(date);
+  let r=db.internalTransfers.find(x=>String(x.date)===String(date));const old=r?{...r}:null;
+  if(r){Object.assign(r,{cowMorning,buffMorning,cowEvening,buffEvening,updatedAt:new Date().toISOString()});}
+  else{r={id:uid(),date,cowMorning,buffMorning,cowEvening,buffEvening,createdAt:new Date().toISOString()};db.internalTransfers.push(r);}
+  window.__akashPickupSelectedDate=date;audit(old?'UPDATE':'CREATE','Milk Given to Hiren / Akash Pickup',r.id,old,r);save();refreshAkashPickupSummary(date);
 }
 function renderMilk(mode='all',value=''){
   if(isAkash()){
