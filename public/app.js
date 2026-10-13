@@ -613,17 +613,17 @@ function addCustomer(){
       <div class="field span4"><div class="notice"><b>Milk Schedule</b><br>દરેક Morning / Evening entry માટે Quantity, Slab અને Rate અલગથી રાખવામાં આવશે. આ જ schedule Daily Milk Entryમાં automatic આવશે.</div></div>
       <div class="field span4"><div class="card" style="margin:0;padding:12px;border-left:4px solid #2e9d57"><h3 style="margin:0">🐄 Cow Milk</h3></div></div>
       <div class="field"><label>Cow • Morning Quantity (L)</label><input id="cowMorningQty" type="number" step="0.01" value="0"></div>
-      <div class="field"><label>Cow • Morning Slab</label><select id="cowMorningSlab">${slabOpts}</select></div>
+      
       <div class="field"><label>Cow • Morning Rate ₹/L</label><input id="cowMorningRate" type="number" step="0.01" placeholder="e.g. 76"></div>
       <div class="field"><label>Cow • Evening Quantity (L)</label><input id="cowEveningQty" type="number" step="0.01" value="0"></div>
-      <div class="field"><label>Cow • Evening Slab</label><select id="cowEveningSlab">${slabOpts}</select></div>
+      
       <div class="field"><label>Cow • Evening Rate ₹/L</label><input id="cowEveningRate" type="number" step="0.01" placeholder="e.g. 76"></div>
       <div class="field span4"><div class="card" style="margin:0;padding:12px;border-left:4px solid #2e9d57"><h3 style="margin:0">🐃 Buffalo Milk</h3></div></div>
       <div class="field"><label>Buffalo • Morning Quantity (L)</label><input id="buffMorningQty" type="number" step="0.01" value="0"></div>
-      <div class="field"><label>Buffalo • Morning Slab</label><select id="buffMorningSlab">${slabOpts}</select></div>
+      
       <div class="field"><label>Buffalo • Morning Rate ₹/L</label><input id="buffMorningRate" type="number" step="0.01" placeholder="e.g. 80"></div>
       <div class="field"><label>Buffalo • Evening Quantity (L)</label><input id="buffEveningQty" type="number" step="0.01" value="0"></div>
-      <div class="field"><label>Buffalo • Evening Slab</label><select id="buffEveningSlab">${slabOpts}</select></div>
+      
       <div class="field"><label>Buffalo • Evening Rate ₹/L</label><input id="buffEveningRate" type="number" step="0.01" placeholder="e.g. 80"></div>
     </div>`,()=>{
       const name=val('name').trim();
@@ -844,10 +844,10 @@ function saveCustomerDailyInline(customerId,date,el){
 function editCustomerDailyMilk(id){
   const r=(db.customerSales||[]).find(x=>x.id===id);if(!r)return;const cust=(db.customers||[]).find(x=>x.id===r.customerId),s=customerMilkSchedule(cust);
   modal('Edit Date-wise Milk Entry','<div class="formgrid"><div class="field span2"><label>Customer</label><input value="'+esc(cust?.name||r.customerName||'')+'" readonly></div><div class="field"><label>Date</label><input id="editMilkDate" type="date" value="'+r.date+'"></div>'+
-    '<div class="field"><label>Cow Morning Rate ₹/L</label><input id="editCowMorningRate" type="number" step="0.01" value="'+num(r.cowMorningRate??s.cow.morningRate)+'"></div><div class="field"><label>Cow Morning Slab</label><select id="editCowMorningSlab">'+akashSlabOptions(r.cowMorningSlabId||s.cow.morningSlabId)+'</select></div><div class="field"><label>Cow Morning (L)</label><input id="editCowMorning" type="number" step="0.01" value="'+num(r.cowMorningQty)+'"></div>'+
-    '<div class="field"><label>Cow Evening Rate ₹/L</label><input id="editCowEveningRate" type="number" step="0.01" value="'+num(r.cowEveningRate??s.cow.eveningRate)+'"></div><div class="field"><label>Cow Evening Slab</label><select id="editCowEveningSlab">'+akashSlabOptions(r.cowEveningSlabId||s.cow.eveningSlabId)+'</select></div><div class="field"><label>Cow Evening (L)</label><input id="editCowEvening" type="number" step="0.01" value="'+num(r.cowEveningQty)+'"></div>'+
-    '<div class="field"><label>Buffalo Morning Rate ₹/L</label><input id="editBuffMorningRate" type="number" step="0.01" value="'+num(r.buffMorningRate??s.buffalo.morningRate)+'"></div><div class="field"><label>Buffalo Morning Slab</label><select id="editBuffMorningSlab">'+akashSlabOptions(r.buffMorningSlabId||s.buffalo.morningSlabId)+'</select></div><div class="field"><label>Buffalo Morning (L)</label><input id="editBuffMorning" type="number" step="0.01" value="'+num(r.buffMorningQty)+'"></div>'+
-    '<div class="field"><label>Buffalo Evening Rate ₹/L</label><input id="editBuffEveningRate" type="number" step="0.01" value="'+num(r.buffEveningRate??s.buffalo.eveningRate)+'"></div><div class="field"><label>Buffalo Evening Slab</label><select id="editBuffEveningSlab">'+akashSlabOptions(r.buffEveningSlabId||s.buffalo.eveningSlabId)+'</select></div><div class="field"><label>Buffalo Evening (L)</label><input id="editBuffEvening" type="number" step="0.01" value="'+num(r.buffEveningQty)+'"></div>'+
+    '<div class="field"><label>Cow Morning Rate ₹/L</label><input id="editCowMorningRate" type="number" step="0.01" value="'+num(r.cowMorningRate??s.cow.morningRate)+'"></div><div class="field"><label>Cow Morning (L)</label><input id="editCowMorning" type="number" step="0.01" value="'+num(r.cowMorningQty)+'"></div>'+
+    '<div class="field"><label>Cow Evening Rate ₹/L</label><input id="editCowEveningRate" type="number" step="0.01" value="'+num(r.cowEveningRate??s.cow.eveningRate)+'"></div><div class="field"><label>Cow Evening (L)</label><input id="editCowEvening" type="number" step="0.01" value="'+num(r.cowEveningQty)+'"></div>'+
+    '<div class="field"><label>Buffalo Morning Rate ₹/L</label><input id="editBuffMorningRate" type="number" step="0.01" value="'+num(r.buffMorningRate??s.buffalo.morningRate)+'"></div><div class="field"><label>Buffalo Morning (L)</label><input id="editBuffMorning" type="number" step="0.01" value="'+num(r.buffMorningQty)+'"></div>'+
+    '<div class="field"><label>Buffalo Evening Rate ₹/L</label><input id="editBuffEveningRate" type="number" step="0.01" value="'+num(r.buffEveningRate??s.buffalo.eveningRate)+'"></div><div class="field"><label>Buffalo Evening (L)</label><input id="editBuffEvening" type="number" step="0.01" value="'+num(r.buffEveningQty)+'"></div>'+
     '<div class="field span2"><label>Total</label><input value="'+num(r.qty).toFixed(2)+' L" readonly></div></div>',()=>{
       const date=val('editMilkDate'),cr1=num(val('editCowMorningRate')),cr2=num(val('editCowEveningRate')),br1=num(val('editBuffMorningRate')),br2=num(val('editBuffEveningRate')),cm=num(val('editCowMorning')),ce=num(val('editCowEvening')),bm=num(val('editBuffMorning')),be=num(val('editBuffEvening')),qty=cm+ce+bm+be,amount=cm*cr1+ce*cr2+bm*br1+be*br2;
       if(!date)return alert('Date required.');if(!qty){if(!confirm('All quantities are zero. Delete this entry?'))return;db.customerSales=db.customerSales.filter(x=>x.id!==id);recordDeletion('customerSales',id,r);audit('DELETE','Customer Daily Sale',id,r,null);save();closeModal();editCustomerEntries(r.customerId);return}
