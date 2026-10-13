@@ -1,0 +1,27 @@
+name: Durga Dairy Safety Checks
+
+on:
+  push:
+    branches: ["main", "safety/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  sync-invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check frontend syntax
+        run: >-
+          node -e 'const fs=require("node:fs"); const vm=require("node:vm"); for (const f of ["public/app.js","public/akash-v2.js","public/akash-v2-fix.js","public/all-v2.js","public/bootstrap.js","public/date-dropdown-live-check.js","public/daily-sale-v3.js","public/customer-module-v1.js"]) new vm.Script(fs.readFileSync(f,"utf8"), { filename: f });'
+      - name: Check Worker syntax
+        run: node --check worker.js
+      - name: Check API and deployment scripts
+        run: node --check cloudflare/live-api-worker.mjs && node --check scripts/deploy-live-assets.mjs
+      - name: Run sync safety tests
+        run: node --test tests/sync-invariants.test.mjs
+
+# Customer module syntax check is included in the frontend syntax step.
