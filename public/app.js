@@ -981,14 +981,15 @@ async function shareCustomerBill(id,month){
  window.closeCustomerBillPreview=function(){document.getElementById('customerBillPreviewModal')?.remove();if(window.__customerBillPreviewURL){URL.revokeObjectURL(window.__customerBillPreviewURL);window.__customerBillPreviewURL='';}};
  document.getElementById('customerBillDownload').onclick=()=>{downloadCustomerBill(file);};
  document.getElementById('customerBillOpen').onclick=()=>{const w=window.open(url,'_blank');if(!w)alert('Allow pop-ups to open the PDF.');};
- document.getElementById('customerBillShare').onclick=async()=>{
-   const text='નમસ્તે '+d.c.name+' 🙏\n\nઆપનું '+d.month+' નું Milk Bill તૈયાર છે.\nCurrent Month Bill: '+money(d.cur.bill)+'\nPrevious Balance: '+money(d.opening)+'\nTotal Due: '+money(d.total)+'\nPaid: '+money(d.paid)+'\nBalance Payable: '+money(d.balance)+'\n\nસમયસર ચુકવણી અને આપના વિશ્વાસ માટે દિલથી આભાર. 🙏\nDurga Dairy';
-   try{
-    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({title:'Durga Dairy - '+d.c.name+' Bill',text,files:[file]});return;}
-   }catch(e){if(e?.name==='AbortError')return;}
+ document.getElementById('customerBillShare').onclick=()=>{
+   const text='નમસ્તે '+d.c.name+' 🙏\n\nઆપનું '+d.month+' નું Milk Bill તૈયાર છે.\nCurrent Month Bill: '+money(d.cur.bill)+'\nPrevious Balance: '+money(d.opening)+'\nTotal Due: '+money(d.total)+'\nPaid: '+money(d.paid)+'\nBalance Payable: '+money(d.balance)+'\n\nવિગતવાર બિલની PDF પણ આ મેસેજ સાથે મોકલી રહ્યો છું. સમયસર ચુકવણી અને આપના વિશ્વાસ માટે દિલથી આભાર. 🙏\nDurga Dairy';
+   const customerPhone=normalizePhone(d.c.mobile);
+   if(!customerPhone||customerPhone.length<10){alert('આ customerનો mobile number સાચો નથી. પહેલાં Customer Editમાં mobile number ઉમેરો.');return;}
+   const waURL='https://wa.me/'+customerPhone+'?text='+encodeURIComponent(text);
+   // Open the selected customer's WhatsApp chat directly; the PDF downloads for manual attachment.
+   const waWindow=window.open(waURL,'_blank');
+   if(!waWindow){alert('WhatsApp ખોલવા માટે pop-ups allow કરો. PDF download કરી ફરી Share કરો.');return;}
    downloadCustomerBill(file);
-   if(phone.length>=10)window.open('https://wa.me/91'+phone+'?text='+encodeURIComponent(text),'_blank');
-   else if(navigator.share)navigator.share({title:'Durga Dairy Bill',text}).catch(()=>{});
  };
 }
 function downloadCustomerBill(file){const url=URL.createObjectURL(file),a=document.createElement('a');a.href=url;a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);alert('PDF bill downloaded. The Gujarati thank-you message is ready to send on WhatsApp.')}
