@@ -948,7 +948,7 @@ function makeCustomerBillPDF(d){
   txt('Cow Milk:',18,top+7,10,true,dark);txt(milkQty.toFixed(2)+' L × '+moneyPdf(milkQty?totalMilk/milkQty:0)+' = '+moneyPdf(totalMilk),290,top+7,10,true,dark);top+=25;line(18,top,577,top,[0.65,0.80,0.90],.7);
   const summary=[['Prev Month:',moneyPdf(d.opening)],['Curr Month:',moneyPdf(d.cur.bill)],['Received:',moneyPdf(d.paid)],['Total Due:',moneyPdf(d.balance)]];
   for(let i=0;i<summary.length;i+=2){rect(0,top,W,25,i===0?light:[1,1,1]);txt(summary[i][0],14,top+7,9,true,dark);txt(summary[i][1],86,top+7,9,true,dark);txt(summary[i+1][0],300,top+7,9,true,dark);txt(summary[i+1][1],380,top+7,9,true,i===1?[0.82,0.12,0.12]:dark);top+=25;}
-  if(terms){top+=9;txt('Terms & Conditions:',18,top,9,true,blue);top+=14;const chunks=wrapPdfText(terms,94).slice(0,3);chunks.forEach(t=>{txt(t,18,top,8,false,muted);top+=11;});}
+  if(terms){top+=9;txt('Terms & Policies:',18,top,9,true,blue);top+=14;const policyLines=(policies.length?policies:[terms]).flatMap((p,i)=>wrapPdfText((i+1)+'. '+p,88));policyLines.slice(0,8).forEach(t=>{txt(t,18,top,8,false,muted);top+=10;});const payment=String(db.settings?.customerBillPaymentInstructions||'').trim();if(payment&&top<795){top+=3;txt('Payment: '+wrapPdfText(payment,88).join(' ').slice(0,125),18,top,7,false,muted);}}
   txt('Thank you for your business · Durga Dairy',175,824,9,true,blue);
   const stream=parts.join('\n'),objects=[];
   objects[1]='1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj';
