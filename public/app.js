@@ -933,18 +933,18 @@ function makeCustomerBillPDF(d){
   top=tableHead(dayCols,top,23);
   const byDay={};entries.forEach(x=>{if(x.productKey==='milk'||x.cowMorningQty!==undefined||x.cowEveningQty!==undefined||x.buffMorningQty!==undefined||x.buffEveningQty!==undefined)byDay[Number(String(x.date).slice(8,10))]=x;});
   const year=Number(d.month.slice(0,4)),month=Number(d.month.slice(5,7)),days=new Date(year,month,0).getDate();
-  for(let r=0;r<16;r++){const day1=r+1,day2=r+17,x1=byDay[day1],x2=byDay[day2];const vals=[String(day1).padStart(2,'0'),x1?num(x1.morningQty??(num(x1.cowMorningQty)+num(x1.buffMorningQty))).toFixed(1):'-',x1?num(x1.eveningQty??(num(x1.cowEveningQty)+num(x1.buffEveningQty))).toFixed(1):'-',day2<=days?String(day2).padStart(2,'0'):'',day2<=days?(x2?num(x2.morningQty??(num(x2.cowMorningQty)+num(x2.buffMorningQty))).toFixed(1):'-'):'',day2<=days?(x2?num(x2.eveningQty??(num(x2.cowEveningQty)+num(x2.buffEveningQty))).toFixed(1):'-'):'' ];top=cellRow(dayCols,vals,top,20,r);if(r===15)break;}
+  for(let r=0;r<16;r++){const day1=r+1,day2=r+17,x1=byDay[day1],x2=byDay[day2];const vals=[String(day1).padStart(2,'0'),x1?num(x1.cowMorningQty??x1.morningQty).toFixed(1):'-',x1?num(x1.cowEveningQty??x1.eveningQty).toFixed(1):'-',day2<=days?String(day2).padStart(2,'0'):'',day2<=days?(x2?num(x2.cowMorningQty??x2.morningQty).toFixed(1):'-'):'',day2<=days?(x2?num(x2.cowEveningQty??x2.eveningQty).toFixed(1):'-'):'' ];top=cellRow(dayCols,vals,top,17,r);if(r===15)break;}
   const milkEntries=entries.filter(x=>x.productKey==='milk'||x.cowMorningQty!==undefined||x.cowEveningQty!==undefined||x.buffMorningQty!==undefined||x.buffEveningQty!==undefined);
   const other=entries.filter(x=>!milkEntries.includes(x));
   top+=8;top=section('Additional Product',top);
   const pcols=[{label:'Date',x:14,max:10},{label:'Product',x:94,max:27},{label:'Price',x:310,max:13},{label:'Qty',x:405,max:9},{label:'Total',x:478,max:14}];
   top=tableHead(pcols,top,24);
-  if(other.length){other.slice(0,6).forEach((x,i)=>{top=cellRow(pcols,[fmtDate(x.date),x.product||x.description||'Other',moneyPdf(x.rate),num(x.qty).toFixed(2),moneyPdf(x.amount)],top,22,i);});}
+  if(other.length){other.slice(0,4).forEach((x,i)=>{top=cellRow(pcols,[fmtDate(x.date),x.product||x.description||'Other',moneyPdf(x.rate),num(x.qty).toFixed(2),moneyPdf(x.amount)],top,19,i);});}
   else top=cellRow(pcols,['-','No additional products','-','-','-'],top,22,0);
   top+=10;top=section('Summary',top);
   const totalMilk=milkEntries.reduce((a,x)=>a+num(x.amount),0),milkQty=milkEntries.reduce((a,x)=>a+num(x.qty),0);
   const otherTotals={};other.forEach(x=>{const name=x.product||x.description||'Other';otherTotals[name]=(otherTotals[name]||0)+num(x.amount);});
-  Object.keys(otherTotals).slice(0,3).forEach(name=>{txt(name+':',18,top+7,10,true,dark);txt(moneyPdf(otherTotals[name]),405,top+7,10,true,dark);top+=25;line(18,top,577,top,[0.65,0.80,0.90],.7);});
+  Object.keys(otherTotals).slice(0,2).forEach(name=>{txt(name+':',18,top+7,10,true,dark);txt(moneyPdf(otherTotals[name]),405,top+7,10,true,dark);top+=25;line(18,top,577,top,[0.65,0.80,0.90],.7);});
   txt('Cow Milk:',18,top+7,10,true,dark);txt(milkQty.toFixed(2)+' L × '+moneyPdf(milkQty?totalMilk/milkQty:0)+' = '+moneyPdf(totalMilk),290,top+7,10,true,dark);top+=25;line(18,top,577,top,[0.65,0.80,0.90],.7);
   const summary=[['Prev Month:',moneyPdf(d.opening)],['Curr Month:',moneyPdf(d.cur.bill)],['Received:',moneyPdf(d.paid)],['Total Due:',moneyPdf(d.balance)]];
   for(let i=0;i<summary.length;i+=2){rect(0,top,W,25,i===0?light:[1,1,1]);txt(summary[i][0],14,top+7,9,true,dark);txt(summary[i][1],86,top+7,9,true,dark);txt(summary[i+1][0],300,top+7,9,true,dark);txt(summary[i+1][1],380,top+7,9,true,i===1?[0.82,0.12,0.12]:dark);top+=25;}
