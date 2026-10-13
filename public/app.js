@@ -1113,6 +1113,34 @@ function customerBulkHistoricalEntry(){
   });
 }
 function bulkProductChanged(){const key=val('bulkProductKey'),wrap=document.getElementById('bulkDescWrap');if(wrap)wrap.style.display=key==='other'?'block':'none';const rate=document.getElementById('bulkRate');if(rate)rate.value=getSaleRate(key)}
+
+function manageCustomerPrices(customerId){
+ const c=(db.customers||[]).find(x=>x.id===customerId);if(!c)return;
+ const products=saleProducts(),today=iso();
+ const rows=products.map((p,i)=>{const rate=customerRateFor(c,p.key,today);return '<div class="formgrid customer-price-row" style="grid-template-columns:minmax(0,1.2fr) minmax(95px,.8fr) minmax(145px,1fr);gap:8px;align-items:end;margin:8px 0"><div><b>'+esc(p.name)+'</b><div class="muted">Customer-specific selling price</div></div><div class="field"><label>Price ₹</label><input id="cpRate_'+i+'" type="number" min="0" step=".01" value="'+(rate||'')+'"></div><div class="field"><label>Applicable From</label><input id="cpDate_'+i+'" type="date" value="'+today+'"></div><input type="hidden" id="cpKey_'+i+'" value="'+esc(p.key)+'"></div>';}).join('');
+ modal('Customer Prices • '+esc(c.name),'<div class="notice">Set each product price once. Daily entries will fill this customer price automatically. If a price changes, choose its effective date so older dated entries keep the previous price.</div>'+rows,()=>{
+  const before=JSON.parse(JSON.stringify(c.priceHistory||[]));c.priceHistory=Array.isArray(c.priceHistory)?c.priceHistory:[];
+  products.forEach((p,i)=>{const raw=val('cpRate_'+i),date=val('cpDate_'+i);if(raw===''||!date)return;const rate=num(raw),old=c.priceHistory.filter(x=>x.productKey===p.key&&String(x.date)<=date).sort((x,y)=>String(x.date).localeCompare(String(y.date))).pop();if(old&&String(old.date)===date&&num(old.rate)===rate)return;const at=c.priceHistory.findIndex(x=>x.productKey===p.key&&String(x.date)===date);const entry={id:at>=0?(c.priceHistory[at].id||uid()):uid(),productKey:p.key,date,rate};if(at>=0)c.priceHistory[at]=entry;else c.priceHistory.push(entry);});
+  c.priceHistory.sort((x,y)=>String(x.date).localeCompare(String(y.date)));audit('UPDATE','Customer Prices',c.id,before,c.priceHistory);save();closeModal();renderCustomerLedger(customerId);
+ });
+}
+function addCustomerOtherProductEntry(customerId){
+ const c=(db.customers||[]).find(x=>x.id===customerId);if(!c)return;
+ const products=saleProducts(),date=iso(),opts=products.map(p=>'<option value="'+esc(p.key)+'">'+esc(p.name)+'</option>').join('');
+ const body='<div class="formgrid"><div class="field"><label>Date</label><input id="otherCustDate" type="date" value="'+date+'"></div><div class="field"><label>Product / Category</label><select id="otherCustKey" onchange="customerOtherRateChanged(\\''+customerId+'\\')">'+opts+'<option value="__custom">Custom Product</option></select></div><div class="field" id="otherCustNameWrap" style="display:none"><label>Custom Product Name</label><input id="otherCustName"></div><div class="field"><label>Quantity</label><input id="otherCustQty" type="number" min="0.01" step="0.01" value="1"></div><div class="field"><label>Rate ₹</label><input id="otherCustRate" type="number" min="0" step="0.01"></div><div class="field span2"><label>Note</label><input id="otherCustNote" placeholder="Optional details"></div></div><div class="notice">The customer-specific price fills automatically. If you need a new or changed price, set it in Customer Prices first.</div>';
+ modal('Other Product Entry • '+esc(c.name),body,()=>{
+  const date=val('otherCustDate'),key=val('otherCustKey'),qty=num(val('otherCustQty')),rate=num(val('otherCustRate')),custom=key==='__custom',name=custom?String(val('otherCustName')||'').trim():(products.find(p=>p.key===key)?.name||'');
+  if(!date||!name||qty<=0||rate<0)return alert('Enter a valid date, product, quantity and price.');
+  const row={id:uid(),customerId,customerName:c.name,date,productKey:custom?'other':key,product:name,description:String(val('otherCustNote')||''),qty,rate,amount:qty*rate,morningQty:qty,eveningQty:0,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),businessId:'hiren'};
+  db.customerSales=db.customerSales||[];db.customerSales.push(row);audit('CREATE','Customer Daily Sale',row.id,null,row);save();closeModal();renderCustomerLedger(customerId);
+ });
+ customerOtherRateChanged(customerId);
+}
+function customerOtherRateChanged(customerId){
+ const c=(db.customers||[]).find(x=>x.id===customerId),key=val('otherCustKey'),date=val('otherCustDate')||iso(),wrap=document.getElementById('otherCustNameWrap'),rate=document.getElementById('otherCustRate');
+ if(wrap)wrap.style.display=key==='__custom'?'block':'none';
+ if(rate&&c&&key!=='__custom')rate.value=customerRateFor(c,key,date);
+}
 function renderCustomers(){
   ensureSalesConfig();
   const month=window.__customerReportMonth||ym(iso());
