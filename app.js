@@ -462,7 +462,7 @@ function editCustomer(id){
   const key=c.saleKey||'milk',rate=customerRateFor(c,key,iso());modal('Edit Customer',`<div class="formgrid"><div class="field span2"><label>Customer Name</label><input value="${esc(c.name||'')}" readonly></div><div class="field"><label>Mobile Number</label><input id="mobile" value="${esc(c.mobile||'')}"></div><div class="field span2"><label>Address</label><input id="address" value="${esc(c.address||'')}"></div><div class="field"><label>Product</label><select id="productKey">${saleProducts().filter(p=>p.key!=='other').map(p=>'<option value="'+p.key+'" '+(p.key===key?'selected':'')+'>'+esc(p.name)+'</option>').join('')}</select></div><div class="field"><label>New Selling Price ₹</label><input id="rate" type="number" step="0.01" value="${rate}"></div><div class="field"><label>Effective From</label><input id="effectiveDate" type="date" value="${iso()}"></div><div class="field"><label>Status</label><select id="active"><option value="true" ${c.active!==false?'selected':''}>Active</option><option value="false" ${c.active===false?'selected':''}>Inactive</option></select></div></div>`,()=>{c.mobile=val('mobile');c.address=val('address');const nk=val('productKey'),nd=val('effectiveDate')||iso(),nr=num(val('rate'));c.saleKey=nk;c.product=saleProducts().find(x=>x.key===nk)?.name||c.product;c.active=val('active')!=='false';addCustomerPriceHistory(c,nk,nd,nr);audit('UPDATE','Customer',c.id,null,c);save();closeModal();render('customers')})}
 function addVendor(){
   if(isAkash()){
-    modal('Akash • Milk Vendor',`<div class="formgrid"><div class="field span2"><label>Vendor Name</label><input id="name"></div><div class="field"><label>Phone</label><input id="phone"></div><div class="field"><label>Milk Purchase Price ₹/L</label><input id="purchaseRate" type="number" step="0.01" min="0"></div><div class="field span4"><div class="notice">Vendor name and purchase price are saved separately. The selected vendor's price auto-fills in Add Milk Purchase.</div></div></div>`,()=>{const r={id:uid(),name:val('name').trim(),type:'Milk',phone:val('phone'),purchaseRate:num(val('purchaseRate'))};if(!r.name)return alert('Enter vendor name.');db.vendors.push(r);audit('CREATE','Vendor',r.id,null,r);save();closeModal();render('vendors')});
+    modal('Akash • Milk Vendor',`<div class="formgrid"><div class="field span2"><label>Vendor Full Name</label><input id="name" placeholder="e.g. Suresh Kaka"></div><div class="field"><label>Phone</label><input id="phone"></div><div class="field"><label>Cow Purchase Price ₹/L</label><input id="cowPurchaseRate" type="number" step="0.01" min="0"></div><div class="field"><label>Buffalo Purchase Price ₹/L</label><input id="buffaloPurchaseRate" type="number" step="0.01" min="0"></div><div class="field span4"><div class="notice">The full vendor name and separate Cow/Buffalo purchase prices are saved. Selecting this vendor fills both prices in Add Milk Purchase.</div></div></div>`,()=>{const r={id:uid(),name:val('name').trim(),fullName:val('name').trim(),type:'Milk',phone:val('phone'),cowPurchaseRate:num(val('cowPurchaseRate')),buffaloPurchaseRate:num(val('buffaloPurchaseRate'))};if(!r.name)return alert('Enter the full vendor name.');db.vendors.push(r);audit('CREATE','Vendor',r.id,null,r);save();closeModal();render('vendors')});
     return;
   }
   modal('Vendor',`<div class="formgrid"><div class="field span2"><label>Name</label><input id="name"></div><div class="field"><label>Type</label><select id="type"><option>Milk</option><option>Ghee</option><option>Peda</option><option>Other</option></select></div><div class="field"><label>Phone</label><input id="phone"></div></div>`,()=>{const r={id:uid(),name:val('name'),type:val('type'),phone:val('phone')};if(!r.name)return alert('Enter vendor name.');db.vendors.push(r);audit('CREATE','Vendor',r.id,null,r);save();closeModal();render('vendors')})}
@@ -521,56 +521,37 @@ function akashMilkProfitReportHTML(mode='all',value=''){
 function akashPickupRecord(date){db.internalTransfers=Array.isArray(db.internalTransfers)?db.internalTransfers:[];return db.internalTransfers.find(x=>String(x.date)===String(date))||null}
 function renderAkashPickupPanelHTML(){
   const date=window.__akashPickupSelectedDate||iso(),r=akashPickupRecord(date)||{};
-  return '<div class="card section" style="border-left:5px solid #2e9d57"><div class="sectionhead"><div><h2 style="margin:0">Milk Given to Hiren • Full Day</h2><div class="muted">Only these four pickup quantities are entered. Akash actual full-day purchase is calculated from Cow/Buffalo morning and evening vendor entries.</div></div></div><div class="formgrid"><div class="field"><label>Date</label><input id="akashPickupDate" type="date" value="'+esc(date)+'" onchange="changeAkashPickupDate(this.value)"></div><div class="field"><label>Cow Milk • Morning (L)</label><input id="pickupCowAM" type="number" min="0" step="0.01" value="'+num(r.cowMorning)+'" oninput="updateAkashPickupNumbers()"></div><div class="field"><label>Buffalo Milk • Morning (L)</label><input id="pickupBuffAM" type="number" min="0" step="0.01" value="'+num(r.buffMorning)+'" oninput="updateAkashPickupNumbers()"></div><div class="field"><label>Cow Milk • Evening (L)</label><input id="pickupCowPM" type="number" min="0" step="0.01" value="'+num(r.cowEvening)+'" oninput="updateAkashPickupNumbers()"></div><div class="field"><label>Buffalo Milk • Evening (L)</label><input id="pickupBuffPM" type="number" min="0" step="0.01" value="'+num(r.buffEvening)+'" oninput="updateAkashPickupNumbers()"></div><div class="field"><label>Akash Actual Full Day • Cow AM / Buffalo AM / Cow PM / Buffalo PM</label><div id="akashActualPurchase" class="notice">Loading…</div></div></div><div class="grid" style="margin-top:10px"><div class="notice">Total Milk Given to Hiren: <b id="akashPickupTotal">0.00 L</b></div><div class="notice">Akash Actual Full Day Purchase: <b id="akashActualTotal">0.00 L</b></div><div class="notice">Milk Remaining with Akash: <b id="akashMilkDue">0.00 L</b></div></div><div class="toolbar" style="margin-top:10px"><button class="btn green" onclick="saveAkashPickupForDate()">Save Pickup</button></div></div>';
+  return '<div class="card section" style="border-left:5px solid #2e9d57"><div class="sectionhead"><div><h2 style="margin:0">Milk Given to Hiren • Full Day</h2><div class="muted">Record only the two morning pickup quantities. These are deducted from Akash actual full-day purchase.</div></div></div><div class="formgrid"><div class="field"><label>Date</label><input id="akashPickupDate" type="date" value="'+esc(date)+'" onchange="changeAkashPickupDate(this.value)"></div><div class="field"><label>Morning Cow Litter (L)</label><input id="pickupCowL" type="number" min="0" step="0.01" value="'+num(r.cowLitres)+'" oninput="updateAkashPickupNumbers()"></div><div class="field"><label>Morning Buffalo Litter (L)</label><input id="pickupBuffL" type="number" min="0" step="0.01" value="'+num(r.buffLitres)+'" oninput="updateAkashPickupNumbers()"></div><div class="field"><label>Akash Actual Full-Day Purchase</label><div id="akashActualPurchase" class="notice">Loading…</div></div></div><div class="grid" style="margin-top:10px"><div class="notice">Total Pickup: <b id="akashPickupTotal">0.00 L</b></div><div class="notice">Milk Due to Hiren: <b id="akashMilkDue">0.00 L</b></div></div><div class="toolbar" style="margin-top:10px"><button class="btn green" onclick="saveAkashPickupForDate()">Save Pickup</button></div></div>';
 }
 async function getAkashActualPurchases(){
-  const cached=window.__zeroTwoData?.akash;
-  if(cached)return cached?.settings?.akashV2?.purchases||[];
+  const cached=window.__zeroTwoData?.akash;if(cached)return cached?.settings?.akashV2?.purchases||[];
   if(window.__akashPurchaseCache)return window.__akashPurchaseCache;
   if(!CLOUD_API)throw new Error('Cloud API unavailable');
-  const base=CLOUD_API.replace(/\/$/,'');
-  const token=await ensureCloudToken(base);
+  const base=CLOUD_API.replace(/\/$/,''),token=await ensureCloudToken(base);
   const response=await fetch(base+'/api/zero-two-state?ts='+Date.now(),{headers:{'Authorization':'Bearer '+token,'Accept':'application/json','Cache-Control':'no-cache'},cache:'no-store'});
   if(!response.ok)throw new Error('Could not read Akash actual purchase ('+response.status+')');
-  const payload=await response.json();
-  const purchases=payload?.akash?.settings?.akashV2?.purchases||[];
-  window.__akashPurchaseCache=purchases;
-  return purchases;
+  const payload=await response.json(),purchases=payload?.akash?.settings?.akashV2?.purchases||[];window.__akashPurchaseCache=purchases;return purchases;
 }
 function updateAkashPickupNumbers(){
-  const cowAM=num(document.getElementById('pickupCowAM')?.value),buffAM=num(document.getElementById('pickupBuffAM')?.value),cowPM=num(document.getElementById('pickupCowPM')?.value),buffPM=num(document.getElementById('pickupBuffPM')?.value);
-  const date=document.getElementById('akashPickupDate')?.value||window.__akashPickupSelectedDate||iso(),actual=window.__akashActualByDate?.[date]||{};
-  const pickup=cowAM+buffAM+cowPM+buffPM,actualTotal=num(actual.cowAM)+num(actual.buffAM)+num(actual.cowPM)+num(actual.buffPM),remaining=actualTotal-pickup;
-  const el=document.getElementById('akashPickupTotal');if(el)el.textContent=pickup.toFixed(2)+' L';
-  const ae=document.getElementById('akashActualTotal');if(ae)ae.textContent=actualTotal.toFixed(2)+' L';
-  const due=document.getElementById('akashMilkDue');if(due)due.textContent=remaining.toFixed(2)+' L';
+  const date=document.getElementById('akashPickupDate')?.value||window.__akashPickupSelectedDate||iso(),cow=num(document.getElementById('pickupCowL')?.value),buff=num(document.getElementById('pickupBuffL')?.value),actual=window.__akashActualByDate?.[date]||0,total=cow+buff;
+  const t=document.getElementById('akashPickupTotal'),d=document.getElementById('akashMilkDue');if(t)t.textContent=total.toFixed(2)+' L';if(d)d.textContent=(actual-total).toFixed(2)+' L';
 }
 async function refreshAkashPickupSummary(date){
   try{
-    const rows=await getAkashActualPurchases(),actual=rows.filter(x=>String(x.date)===String(date)).reduce((s,x)=>({
-      cowAM:s.cowAM+num(x.cowMorning??x.vendorMorning),buffAM:s.buffAM+num(x.buffMorning),cowPM:s.cowPM+num(x.cowEvening??x.vendorEvening),buffPM:s.buffPM+num(x.buffEvening)
-    }),{cowAM:0,buffAM:0,cowPM:0,buffPM:0});
+    const rows=await getAkashActualPurchases(),actual=rows.filter(x=>String(x.date)===String(date)).reduce((s,x)=>s+num(x.cowMorning??x.vendorMorning)+num(x.buffMorning)+num(x.cowEvening??x.vendorEvening)+num(x.buffEvening),0);
     window.__akashActualByDate=window.__akashActualByDate||{};window.__akashActualByDate[date]=actual;
-    const el=document.getElementById('akashActualPurchase');
-    if(el)el.textContent='Cow AM '+actual.cowAM.toFixed(2)+' L • Buffalo AM '+actual.buffAM.toFixed(2)+' L • Cow PM '+actual.cowPM.toFixed(2)+' L • Buffalo PM '+actual.buffPM.toFixed(2)+' L';
-    updateAkashPickupNumbers();
-  }catch(e){
-    const el=document.getElementById('akashActualPurchase');if(el)el.textContent='Actual purchase unavailable';
-    const due=document.getElementById('akashMilkDue');if(due)due.textContent='Actual purchase unavailable';
-  }
+    const el=document.getElementById('akashActualPurchase');if(el)el.textContent=actual.toFixed(2)+' L';updateAkashPickupNumbers();
+  }catch(e){const el=document.getElementById('akashActualPurchase');if(el)el.textContent='Actual purchase unavailable';const due=document.getElementById('akashMilkDue');if(due)due.textContent='Actual purchase unavailable'}
 }
 function changeAkashPickupDate(date){
   window.__akashPickupSelectedDate=date||iso();const r=akashPickupRecord(window.__akashPickupSelectedDate)||{};
-  [['pickupCowAM','cowMorning'],['pickupBuffAM','buffMorning'],['pickupCowPM','cowEvening'],['pickupBuffPM','buffEvening']].forEach(([id,key])=>{const el=document.getElementById(id);if(el)el.value=num(r[key])});
-  refreshAkashPickupSummary(window.__akashPickupSelectedDate);
+  const cow=document.getElementById('pickupCowL'),buff=document.getElementById('pickupBuffL');if(cow)cow.value=num(r.cowLitres);if(buff)buff.value=num(r.buffLitres);refreshAkashPickupSummary(window.__akashPickupSelectedDate);
 }
 function saveAkashPickupForDate(){
-  const date=document.getElementById('akashPickupDate')?.value||iso(),cowMorning=num(document.getElementById('pickupCowAM')?.value),buffMorning=num(document.getElementById('pickupBuffAM')?.value),cowEvening=num(document.getElementById('pickupCowPM')?.value),buffEvening=num(document.getElementById('pickupBuffPM')?.value);
-  if([cowMorning,buffMorning,cowEvening,buffEvening].some(x=>x<0))return alert('Pickup litres cannot be negative.');
-  db.internalTransfers=Array.isArray(db.internalTransfers)?db.internalTransfers:[];
-  let r=db.internalTransfers.find(x=>String(x.date)===String(date));const old=r?{...r}:null;
-  if(r){Object.assign(r,{cowMorning,buffMorning,cowEvening,buffEvening,updatedAt:new Date().toISOString()});}
-  else{r={id:uid(),date,cowMorning,buffMorning,cowEvening,buffEvening,createdAt:new Date().toISOString()};db.internalTransfers.push(r);}
+  const date=document.getElementById('akashPickupDate')?.value||iso(),cowLitres=num(document.getElementById('pickupCowL')?.value),buffLitres=num(document.getElementById('pickupBuffL')?.value);
+  if(cowLitres<0||buffLitres<0)return alert('Pickup litres cannot be negative.');
+  db.internalTransfers=Array.isArray(db.internalTransfers)?db.internalTransfers:[];let r=db.internalTransfers.find(x=>String(x.date)===String(date));const old=r?{...r}:null;
+  if(r){r.cowLitres=cowLitres;r.buffLitres=buffLitres;r.updatedAt=new Date().toISOString()}else{r={id:uid(),date,cowLitres,buffLitres,createdAt:new Date().toISOString()};db.internalTransfers.push(r)}
   window.__akashPickupSelectedDate=date;audit(old?'UPDATE':'CREATE','Milk Given to Hiren / Akash Pickup',r.id,old,r);save();refreshAkashPickupSummary(date);
 }
 function renderMilk(mode='all',value=''){
