@@ -49,7 +49,21 @@ window.previewCustomerBill=function(id,month){
 };
 window.shareCustomerBill=function(id,month){previewCustomerBill(id,month);};
 window.downloadCustomerBillFromPreview=function(){const p=window.__customerBillPreview;if(p)downloadCustomerBill(p.file);};
-window.shareCustomerBillFromPreview=async function(){const p=window.__customerBillPreview;if(!p)return;try{if(navigator.share&&navigator.canShare&&navigator.canShare({files:[p.file]})){await navigator.share({title:'Durga Dairy Bill',text:p.text,files:[p.file]});return;}}catch(e){if(e?.name==='AbortError')return;}downloadCustomerBill(p.file);const c=db.customers.find(x=>x.id===p.id),phone=String(c?.mobile||'').replace(/\D/g,'');if(phone.length>=10)window.open('https://wa.me/91'+phone+'?text='+encodeURIComponent(p.text),'_blank');};
+window.shareCustomerBillFromPreview=function(){
+ const p=window.__customerBillPreview;if(!p)return;
+ const c=(db.customers||[]).find(x=>x.id===p.id),digits=String(c?.mobile||'').replace(/\D/g,'');
+ if(!digits||digits.length<10){alert('આ customerનો સાચો mobile number સેવ નથી. પહેલાં Customer Editમાં નંબર તપાસો.');return;}
+ const phone=digits.length===10?'91'+digits:(digits.startsWith('0')&&digits.length===11?'91'+digits.slice(1):digits);
+ const mobile=!!(navigator.userAgentData?.mobile||/Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+ const encoded=encodeURIComponent(p.text);
+ const waURL=mobile?'https://wa.me/'+phone+'?text='+encoded:'https://web.whatsapp.com/send?phone='+phone+'&text='+encoded;
+ // Open WhatsApp synchronously inside the click gesture before triggering the PDF download.
+ let opened=false;
+ try{const w=window.open(waURL,'_blank');if(w){opened=true;try{w.opener=null;}catch(_){}}}catch(_){}
+ if(!opened){const a=document.createElement('a');a.href=waURL;a.target='_blank';a.rel='noopener noreferrer';a.style.display='none';document.body.appendChild(a);a.click();a.remove();}
+ // Browsers cannot automatically attach a local PDF to a WhatsApp chat.
+ downloadCustomerBill(p.file);
+};
 window.customerBillPrintFromPreview=function(){const p=window.__customerBillPreview;if(p&&!window.open(p.url,'_blank'))alert('Allow pop-ups to open the PDF.');};
 window.customerBillPrint=function(id,month){previewCustomerBill(id,month);};
 window.renderCustomerLedger=function(id){
