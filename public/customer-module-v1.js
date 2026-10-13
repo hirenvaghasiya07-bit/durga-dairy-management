@@ -32,14 +32,28 @@ window.addCustomerProductEntry=function(cid){
 window.customerProductRateChanged=function(){const c=db.customers.find(x=>x.id===window.__cmProductCid),key=val('custProductKey'),d=val('custProductDate')||iso(),r=document.getElementById('custProductRate'),w=document.getElementById('custProductOtherWrap');if(w)w.style.display=key==='other'?'block':'none';if(c&&r)r.value=cmRate(c,key,d);customerProductRecalc();};
 window.customerProductRecalc=function(){const e=document.getElementById('custProductAmount');if(e)e.value=(num(val('custProductQty'))*num(val('custProductRate'))).toFixed(2);};
 window.makeCustomerBillPDF=function(d){
- const c=d.c,lines=['DURGA DAIRY - CUSTOMER BILL','Customer: '+c.name,'Phone: '+(c.mobile||'-'),'Address: '+(c.address||'-'),'Bill No: DD-'+c.id+'-'+d.month,'Billing Period: '+d.month,'','CURRENT MONTH BILL: '+pdfMoney(d.cur.bill),'PREVIOUS MONTH BILL: '+pdfMoney(d.pr?.bill||0),'PREVIOUS BALANCE: '+pdfMoney(d.opening),'PAID THIS MONTH: '+pdfMoney(d.paid),'ADJUSTMENTS: '+pdfMoney(d.adj),'TOTAL DUE: '+pdfMoney(d.total),'BALANCE RECEIVABLE: '+pdfMoney(d.balance),'','CATEGORY-WISE BILL'];
- const es=db.customerSales.filter(x=>x.customerId===c.id&&ym(x.date)===d.month).sort((a,b)=>String(a.date).localeCompare(String(b.date))),tot={};
- es.forEach(x=>{const n=x.product||'Milk',k=n+'|'+num(x.rate).toFixed(2);if(!tot[k])tot[k]={name:n,rate:num(x.rate),qty:0,amount:0};tot[k].qty+=num(x.qty);tot[k].amount+=num(x.amount);});
- const groups=Object.values(tot);if(groups.length)groups.forEach(x=>lines.push(x.name+' | Qty '+x.qty.toFixed(2)+' | Price '+pdfMoney(x.rate)+' / unit | Total '+pdfMoney(x.amount)));else lines.push('No product entries this month.');
- lines.push('','DATE-WISE ENTRIES');if(es.length)es.forEach(x=>lines.push(fmtDate(x.date)+' | '+(x.product||'Milk')+' | Qty '+num(x.qty).toFixed(2)+' | Rate '+pdfMoney(x.rate)+' | Amount '+pdfMoney(x.amount)));else lines.push('No entries this month.');
- const pays=db.customerPayments.filter(x=>x.customerId===c.id&&x.month===d.month);lines.push('','PAYMENTS');if(pays.length)pays.forEach(x=>lines.push(fmtDate(x.date||x.month)+' | Paid '+pdfMoney(x.amount)+' | Adjustment '+pdfMoney(x.adjustment)+' | '+(x.mode||x.paymentMode||'')));else lines.push('No payments recorded.');
- lines.push('','PAYMENT INSTRUCTIONS');lines.push(...wrapPdfText(db.settings?.customerBillPaymentInstructions||'Contact Durga Dairy for payment details.'));lines.push('','Thank you for your business.');lines.push('','TERMS & POLICIES');
- const policies=Array.isArray(db.settings?.customerBillPolicies)?db.settings.customerBillPolicies.filter(Boolean):String(db.settings?.customerBillTerms||'').split(/\n+/).filter(Boolean);if(policies.length)policies.forEach((p,i)=>{lines.push((i+1)+'.');lines.push(...wrapPdfText(String(p)));});else lines.push('No policies saved.');return makeTextPDFPages(lines);
+ const c=d.c,month=d.month,all=(db.customerSales||[]).filter(x=>x.customerId===c.id&&ym(x.date)===month).sort((a,b)=>String(a.date).localeCompare(String(b.date))),milk=all.filter(x=>x.productKey==='milk'||(!x.productKey&&String(x.product||'').toLowerCase()==='milk')),other=all.filter(x=>!(x.productKey==='milk'||(!x.productKey&&String(x.product||'').toLowerCase()==='milk')));
+ const lines=['DURGA DAIRY','CUSTOMER MONTHLY BILL','Customer: '+c.name,'Mobile: '+(c.mobile||'-'),'Address: '+(c.address||'-'),'Bill No: DD-'+c.id+'-'+month,'Bill Month: '+month,'','COW MILK / BUFFALO MILK'];
+ const dayMap={};milk.forEach(x=>{const k=x.date;dayMap[k]=dayMap[k]||{cowAM:0,cowPM:0,buffAM:0,buffPM:0,qty:0,amount:0};const z=dayMap[k];z.cowAM+=num(x.cowMorningQty);z.cowPM+=num(x.cowEveningQty);z.buffAM+=num(x.buffMorningQty);z.buffPM+=num(x.buffEveningQty);if(x.cowMorningQty===undefined&&x.cowEveningQty===undefined&&x.buffMorningQty===undefined&&x.buffEveningQty===undefined)z.cowPM+=num(x.qty);z.qty+=num(x.qty);z.amount+=num(x.amount);});
+ const dates=Object.keys(dayMap).sort(),fmt=n=>num(n)>0?num(n).toFixed(2):'-';
+ lines.push('Date       Cow AM   Cow PM   Buff AM  Buff PM  Total L  Amount ₹');
+ lines.push('-----------------------------------------------------------------');
+ dates.forEach(date=>{const z=dayMap[date];lines.push(fmtDate(date)+'  '+fmt(z.cowAM).padStart(7)+'  '+fmt(z.cowPM).padStart(7)+'  '+fmt(z.buffAM).padStart(7)+'  '+fmt(z.buffPM).padStart(7)+'  '+fmt(z.qty).padStart(7)+'  '+pdfMoney(z.amount));});
+ if(!dates.length)lines.push('No milk entries recorded this month.');
+ const productTotals={};other.forEach(x=>{const name=x.product||x.description||'Other Product',k=name+'|'+num(x.rate).toFixed(2);if(!productTotals[k])productTotals[k]={name,rate:num(x.rate),qty:0,amount:0};productTotals[k].qty+=num(x.qty);productTotals[k].amount+=num(x.amount);});
+ lines.push('','ADDITIONAL PRODUCT');
+ if(Object.keys(productTotals).length){lines.push('Date       Product                 Price/unit   Qty     Total ₹');lines.push('-----------------------------------------------------------------');other.forEach(x=>lines.push(fmtDate(x.date)+'  '+String(x.product||x.description||'Other').slice(0,22).padEnd(22)+'  '+pdfMoney(x.rate).padStart(9)+'  '+num(x.qty).toFixed(2).padStart(6)+'  '+pdfMoney(x.amount)));}else lines.push('No additional products this month.');
+ lines.push('','SUMMARY');
+ Object.values(productTotals).forEach(x=>lines.push(x.name+': '+x.qty.toFixed(2)+' x '+pdfMoney(x.rate)+' = '+pdfMoney(x.amount)));
+ const milkQty=milk.reduce((a,x)=>a+num(x.qty),0),milkAmount=milk.reduce((a,x)=>a+num(x.amount),0),otherAmount=other.reduce((a,x)=>a+num(x.amount),0);
+ lines.push('Cow / Buffalo Milk: '+milkQty.toFixed(2)+' L = '+pdfMoney(milkAmount));
+ lines.push('Additional Products Total: '+pdfMoney(otherAmount));
+ lines.push('TOTAL AMOUNT: '+pdfMoney(d.cur.bill),'','PREVIOUS MONTH: '+pdfMoney(d.opening),'CURRENT MONTH: '+pdfMoney(d.cur.bill),'RECEIVED: '+pdfMoney(d.paid),'ADJUSTMENT / CREDIT: '+pdfMoney(d.adj),'TOTAL DUE: '+pdfMoney(d.total),'BALANCE RECEIVABLE: '+pdfMoney(d.balance));
+ const pays=(db.customerPayments||[]).filter(x=>x.customerId===c.id&&x.month===month).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+ lines.push('','PAYMENT HISTORY');if(pays.length)pays.forEach(x=>lines.push(fmtDate(x.date||x.month)+' | Received '+pdfMoney(x.amount)+' | Adjustment '+pdfMoney(x.adjustment)+' | '+(x.mode||x.paymentMode||'')));else lines.push('No payments recorded this month.');
+ lines.push('','PAYMENT INSTRUCTIONS');lines.push(...wrapPdfText(db.settings?.customerBillPaymentInstructions||'Contact Durga Dairy for payment details.'));
+ lines.push('','TERMS & POLICIES');const policies=Array.isArray(db.settings?.customerBillPolicies)?db.settings.customerBillPolicies.filter(Boolean):String(db.settings?.customerBillTerms||'').split(/\n+/).filter(Boolean);if(policies.length)policies.forEach((p,i)=>{lines.push((i+1)+'. '+String(p));});else lines.push('No policies saved.');
+ lines.push('','Thank you for your business.');return makeTextPDFPages(lines);
 };
 window.previewCustomerBill=function(id,month){
  const d=customerBillData(id,month||ym(iso()));if(!d)return;const blob=makeCustomerBillPDF(d),file=new File([blob],String(d.c.name).replace(/[^a-z0-9]+/gi,'_')+'_'+d.month+'_Bill.pdf',{type:'application/pdf'}),url=URL.createObjectURL(blob);
