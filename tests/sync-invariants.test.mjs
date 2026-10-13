@@ -74,13 +74,38 @@ test('Akash sync cannot overwrite Hiren partition', () => {
 
 test('Akash purchase tombstones prevent stale purchase rows from returning', () => {
   const purchase = { id: 'akash-purchase-1', businessId: 'akash', date: '2026-10-13', vendor: 'Vendor A' };
-  const remote = state({ settings: { __businesses: { akash: state({ settings: { akashV2: { purchases: [purchase], __tomb: {} } } }) } } });
-  const incoming = state({ settings: { __businesses: { akash: state({ settings: { akashV2: { purchases: [], __tomb: { purchases: { 'akash-purchase-1': { recordId: 'akash-purchase-1', deletedAt: '2026-10-13T10:00:00.000Z' } } } } } }) } });
+  const remoteAkash = state({
+    settings: {
+      akashV2: {
+        purchases: [purchase],
+        __tomb: {}
+      }
+    }
+  });
+  const remote = state({ settings: { __businesses: { akash: remoteAkash } } });
+  const deletedAkash = state({
+    settings: {
+      akashV2: {
+        purchases: [],
+        __tomb: {
+          purchases: {
+            'akash-purchase-1': {
+              recordId: 'akash-purchase-1',
+              deletedAt: '2026-10-13T10:00:00.000Z'
+            }
+          }
+        }
+      }
+    }
+  });
+  const incoming = state({ settings: { __businesses: { akash: deletedAkash } } });
   const deleted = mergeWorkspace(remote, incoming, 'akash', {}, 'u_akash');
   const akash = deleted.settings.__businesses.akash.settings.akashV2;
   assert.equal(akash.purchases.length, 0);
   assert.ok(akash.__tomb.purchases['akash-purchase-1']);
-  const stale = state({ settings: { __businesses: { akash: state({ settings: { akashV2: { purchases: [purchase], __tomb: {} } } }) } } });
+
+  const staleAkash = state({ settings: { akashV2: { purchases: [purchase], __tomb: {} } } });
+  const stale = state({ settings: { __businesses: { akash: staleAkash } } });
   const retried = mergeWorkspace(deleted, stale, 'akash', {}, 'u_akash');
   assert.equal(retried.settings.__businesses.akash.settings.akashV2.purchases.length, 0);
   assert.ok(retried.settings.__businesses.akash.settings.akashV2.__tomb.purchases['akash-purchase-1']);
