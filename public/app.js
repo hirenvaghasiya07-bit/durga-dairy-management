@@ -1125,9 +1125,10 @@ function manageCustomerPrices(customerId){
  });
 }
 function addCustomerOtherProductEntry(customerId){
+ window.__customerProductEntryId=customerId;
  const c=(db.customers||[]).find(x=>x.id===customerId);if(!c)return;
  const products=saleProducts(),date=iso(),opts=products.map(p=>'<option value="'+esc(p.key)+'">'+esc(p.name)+'</option>').join('');
- const body='<div class="formgrid"><div class="field"><label>Date</label><input id="otherCustDate" type="date" value="'+date+'"></div><div class="field"><label>Product / Category</label><select id="otherCustKey" onchange="customerOtherRateChanged(\\''+customerId+'\\')">'+opts+'<option value="__custom">Custom Product</option></select></div><div class="field" id="otherCustNameWrap" style="display:none"><label>Custom Product Name</label><input id="otherCustName"></div><div class="field"><label>Quantity</label><input id="otherCustQty" type="number" min="0.01" step="0.01" value="1"></div><div class="field"><label>Rate ₹</label><input id="otherCustRate" type="number" min="0" step="0.01"></div><div class="field span2"><label>Note</label><input id="otherCustNote" placeholder="Optional details"></div></div><div class="notice">The customer-specific price fills automatically. If you need a new or changed price, set it in Customer Prices first.</div>';
+ const body='<div class="formgrid"><div class="field"><label>Date</label><input id="otherCustDate" type="date" value="'+date+'"></div><div class="field"><label>Product / Category</label><select id="otherCustKey" onchange="customerOtherRateChanged()">'+opts+'<option value="__custom">Custom Product</option></select></div><div class="field" id="otherCustNameWrap" style="display:none"><label>Custom Product Name</label><input id="otherCustName"></div><div class="field"><label>Quantity</label><input id="otherCustQty" type="number" min="0.01" step="0.01" value="1"></div><div class="field"><label>Rate ₹</label><input id="otherCustRate" type="number" min="0" step="0.01"></div><div class="field span2"><label>Note</label><input id="otherCustNote" placeholder="Optional details"></div></div><div class="notice">The customer-specific price fills automatically. If you need a new or changed price, set it in Customer Prices first.</div>';
  modal('Other Product Entry • '+esc(c.name),body,()=>{
   const date=val('otherCustDate'),key=val('otherCustKey'),qty=num(val('otherCustQty')),rate=num(val('otherCustRate')),custom=key==='__custom',name=custom?String(val('otherCustName')||'').trim():(products.find(p=>p.key===key)?.name||'');
   if(!date||!name||qty<=0||rate<0)return alert('Enter a valid date, product, quantity and price.');
@@ -1137,6 +1138,7 @@ function addCustomerOtherProductEntry(customerId){
  customerOtherRateChanged(customerId);
 }
 function customerOtherRateChanged(customerId){
+ customerId=customerId||window.__customerProductEntryId;
  const c=(db.customers||[]).find(x=>x.id===customerId),key=val('otherCustKey'),date=val('otherCustDate')||iso(),wrap=document.getElementById('otherCustNameWrap'),rate=document.getElementById('otherCustRate');
  if(wrap)wrap.style.display=key==='__custom'?'block':'none';
  if(rate&&c&&key!=='__custom')rate.value=customerRateFor(c,key,date);
