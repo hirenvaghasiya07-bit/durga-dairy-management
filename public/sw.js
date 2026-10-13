@@ -1,4 +1,4 @@
-const CACHE='durga-dairy-v11';
+const CACHE='durga-dairy-v12';
 const BUILD_VERSION='2026-10-12-date-dropdown-v1';
 self.addEventListener('install',event=>{
   self.skipWaiting();
