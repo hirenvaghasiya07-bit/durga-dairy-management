@@ -911,17 +911,56 @@ function makeTextPDFPages(lines){
   return new Blob([new TextEncoder().encode(pdf)],{type:'application/pdf'});
 }
 function makeCustomerBillPDF(d){
-  const c=d.c,lines=[];const terms=String(db.settings?.customerBillTerms||'').trim();
-  lines.push('Customer: '+(c.name||''),'Phone: '+(c.mobile||'-'),'Address: '+(c.address||'-'),'Bill Number: DD-'+c.id+'-'+d.month,'Billing Period: '+d.month,'Bill Date: '+fmtDate(iso()),'');
-  lines.push('PREVIOUS OUTSTANDING: '+pdfMoney(d.opening),'CURRENT MONTH CHARGES: '+pdfMoney(d.cur.bill),'PAYMENTS RECEIVED: '+pdfMoney(d.paid),'CREDITS / ADJUSTMENTS: '+pdfMoney(d.adj),'CLOSING OUTSTANDING: '+pdfMoney(d.balance),'','DATE-WISE TRANSACTION SUMMARY');
-  const entries=(db.customerSales||[]).filter(x=>x.customerId===c.id&&ym(x.date)===d.month).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
-  if(entries.length){for(const x of entries){lines.push(fmtDate(x.date)+' | '+(x.product||'Milk')+' | Qty '+num(x.qty).toFixed(2)+' | Rate '+pdfMoney(x.rate)+' | Amount '+pdfMoney(x.amount));if(x.note)lines.push('Note: '+x.note)}}else lines.push('No date-wise sales entries recorded for this month.');
-  const payments=(db.customerPayments||[]).filter(x=>x.customerId===c.id&&x.month===d.month).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
-  lines.push('','PAYMENT HISTORY');if(payments.length)for(const p of payments)lines.push(fmtDate(p.date||p.month)+' | Paid '+pdfMoney(p.amount)+' | Adjustment '+pdfMoney(p.adjustment)+' | '+(p.mode||p.paymentMode||'')+' '+(p.note||''));else lines.push('No payments recorded for this month.');
-  lines.push('','PAYMENT INSTRUCTIONS');lines.push(...wrapPdfText(db.settings?.customerBillPaymentInstructions||'Please contact Durga Dairy to confirm the payment method and outstanding balance.'));
-  lines.push('','TERMS & CONDITIONS');if(terms){for(const paragraph of terms.split(/\n+/)){lines.push(...wrapPdfText(paragraph));lines.push('')}}else lines.push('No global Terms & Conditions have been saved yet.');
-  lines.push('','This statement is generated from the current customer ledger. Please contact Durga Dairy if any entry requires review.');
-  return makeTextPDFPages(lines);
+  const c=d.c,entries=(db.customerSales||[]).filter(x=>x.customerId===c.id&&ym(x.date)===d.month).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const payments=(db.customerPayments||[]).filter(x=>x.customerId===c.id&&x.month===d.month);
+  const terms=String(db.settings?.customerBillTerms||'').trim();
+  const parts=[],W=595,H=842;
+  const blue=[0.12,0.46,0.78],light=[0.89,0.94,0.98],dark=[0.10,0.15,0.20],muted=[0.35,0.40,0.46];
+  function color(c){return c.map(v=>v.toFixed(3)).join(' ');}
+  function rect(x,top,w,h,fill,stroke){const y=H-top-h;if(fill)parts.push(color(fill)+' rg '+x+' '+y+' '+w+' '+h+' re f');if(stroke)parts.push(color(stroke)+' RG '+x+' '+y+' '+w+' '+h+' re S');}
+  function line(x1,top1,x2,top2,col=light,width=.6){parts.push(color(col)+' RG '+width+' w '+x1+' '+(H-top1)+' m '+x2+' '+(H-top2)+' l S');}
+  function txt(value,x,top,size=9,bold=false,col=dark){const t=pdfEscape(String(value??''));parts.push(color(col)+' rg BT '+(bold?'/F2':'/F1')+' '+size+' Tf 1 0 0 1 '+x+' '+(H-top-size)+' Tm ('+t+') Tj ET');}
+  function moneyPdf(v){return 'Rs. '+num(v).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
+  function fit(s,n){s=String(s??'');return s.length>n?s.slice(0,Math.max(0,n-1))+'…':s;}
+  function section(title,top){rect(0,top,W,27,blue);txt(title,18,top+7,13,true,[1,1,1]);return top+27;}
+  function tableHead(cols,top,height=25){rect(0,top,W,height,blue);cols.forEach(c=>txt(c.label,c.x,top+7,c.size||9,true,[1,1,1]));return top+height;}
+  function cellRow(cols,values,top,height,idx){rect(0,top,W,height,idx%2===0?light:[1,1,1]);line(0,top+height,W,top+height,[0.80,0.84,0.88],.45);cols.forEach((c,i)=>txt(fit(values[i],c.max||24),c.x,top+6,c.size||9,i===0,dark));return top+height;}
+  txt('DURGA DAIRY',18,16,21,true,blue);txt('CUSTOMER MONTHLY BILL',18,42,12,true,dark);txt('Bill Month: '+d.month,405,21,10,true,dark);txt('Bill Date: '+fmtDate(iso()),405,39,9,false,muted);
+  line(18,62,577,62,blue,1.5);
+  txt('Customer: '+fit(c.name||'',42),18,72,11,true,dark);txt('Mobile: '+fit(c.mobile||'-',25),18,89,9,false,muted);txt('Address: '+fit(c.address||'-',65),18,104,9,false,muted);
+  let top=127;top=section('Cow Milk',top);
+  const dayCols=[{label:'Date',x:14,max:6},{label:'Morning (L)',x:66,max:11},{label:'Evening (L)',x:129,max:11},{label:'Date',x:300,max:6},{label:'Morning (L)',x:352,max:11},{label:'Evening (L)',x:415,max:11}];
+  top=tableHead(dayCols,top,23);
+  const byDay={};entries.forEach(x=>{if(x.productKey==='milk'||x.cowMorningQty!==undefined||x.cowEveningQty!==undefined||x.buffMorningQty!==undefined||x.buffEveningQty!==undefined)byDay[Number(String(x.date).slice(8,10))]=x;});
+  const year=Number(d.month.slice(0,4)),month=Number(d.month.slice(5,7)),days=new Date(year,month,0).getDate();
+  for(let r=0;r<16;r++){const day1=r+1,day2=r+17,x1=byDay[day1],x2=byDay[day2];const vals=[String(day1).padStart(2,'0'),x1?num(x1.morningQty??(num(x1.cowMorningQty)+num(x1.buffMorningQty))).toFixed(1):'-',x1?num(x1.eveningQty??(num(x1.cowEveningQty)+num(x1.buffEveningQty))).toFixed(1):'-',day2<=days?String(day2).padStart(2,'0'):'',day2<=days?(x2?num(x2.morningQty??(num(x2.cowMorningQty)+num(x2.buffMorningQty))).toFixed(1):'-'):'',day2<=days?(x2?num(x2.eveningQty??(num(x2.cowEveningQty)+num(x2.buffEveningQty))).toFixed(1):'-'):'' ];top=cellRow(dayCols,vals,top,20,r);if(r===15)break;}
+  const milkEntries=entries.filter(x=>x.productKey==='milk'||x.cowMorningQty!==undefined||x.cowEveningQty!==undefined||x.buffMorningQty!==undefined||x.buffEveningQty!==undefined);
+  const other=entries.filter(x=>!milkEntries.includes(x));
+  top+=8;top=section('Additional Product',top);
+  const pcols=[{label:'Date',x:14,max:10},{label:'Product',x:94,max:27},{label:'Price',x:310,max:13},{label:'Qty',x:405,max:9},{label:'Total',x:478,max:14}];
+  top=tableHead(pcols,top,24);
+  if(other.length){other.slice(0,6).forEach((x,i)=>{top=cellRow(pcols,[fmtDate(x.date),x.product||x.description||'Other',moneyPdf(x.rate),num(x.qty).toFixed(2),moneyPdf(x.amount)],top,22,i);});}
+  else top=cellRow(pcols,['-','No additional products','-','-','-'],top,22,0);
+  top+=10;top=section('Summary',top);
+  const totalMilk=milkEntries.reduce((a,x)=>a+num(x.amount),0),milkQty=milkEntries.reduce((a,x)=>a+num(x.qty),0);
+  const otherTotals={};other.forEach(x=>{const name=x.product||x.description||'Other';otherTotals[name]=(otherTotals[name]||0)+num(x.amount);});
+  Object.keys(otherTotals).slice(0,3).forEach(name=>{txt(name+':',18,top+7,10,true,dark);txt(moneyPdf(otherTotals[name]),405,top+7,10,true,dark);top+=25;line(18,top,577,top,[0.65,0.80,0.90],.7);});
+  txt('Cow Milk:',18,top+7,10,true,dark);txt(milkQty.toFixed(2)+' L × '+moneyPdf(milkQty?totalMilk/milkQty:0)+' = '+moneyPdf(totalMilk),290,top+7,10,true,dark);top+=25;line(18,top,577,top,[0.65,0.80,0.90],.7);
+  const summary=[['Prev Month:',moneyPdf(d.opening)],['Curr Month:',moneyPdf(d.cur.bill)],['Received:',moneyPdf(d.paid)],['Total Due:',moneyPdf(d.balance)]];
+  for(let i=0;i<summary.length;i+=2){rect(0,top,W,25,i===0?light:[1,1,1]);txt(summary[i][0],14,top+7,9,true,dark);txt(summary[i][1],86,top+7,9,true,dark);txt(summary[i+1][0],300,top+7,9,true,dark);txt(summary[i+1][1],380,top+7,9,true,i===1?[0.82,0.12,0.12]:dark);top+=25;}
+  if(terms){top+=9;txt('Terms & Conditions:',18,top,9,true,blue);top+=14;const chunks=wrapPdfText(terms,94).slice(0,3);chunks.forEach(t=>{txt(t,18,top,8,false,muted);top+=11;});}
+  txt('Thank you for your business · Durga Dairy',175,824,9,true,blue);
+  const stream=parts.join('\n'),objects=[];
+  objects[1]='1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj';
+  objects[2]='2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj';
+  objects[3]='3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+W+' '+H+'] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>\nendobj';
+  objects[4]='4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj';
+  objects[5]='5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj';
+  objects[6]='6 0 obj\n<< /Length '+new TextEncoder().encode(stream).length+' >>\nstream\n'+stream+'\nendstream\nendobj';
+  let pdf='%PDF-1.4\n';const offsets=[0];for(let i=1;i<objects.length;i++){offsets[i]=new TextEncoder().encode(pdf).length;pdf+=objects[i]+'\n';}
+  const xref=new TextEncoder().encode(pdf).length;pdf+='xref\n0 '+objects.length+'\n0000000000 65535 f \n';for(let i=1;i<objects.length;i++)pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';
+  pdf+='trailer\n<< /Size '+objects.length+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF';
+  return new Blob([new TextEncoder().encode(pdf)],{type:'application/pdf'});
 }
 function customerBillData(id,month){const c=(db.customers||[]).find(x=>x.id===id);if(!c)return null;const prev=prevMonth(month),cur=customerMonthSummary(id,month),pr=customerMonthSummary(id,prev),opening=customerBalanceBefore(id,month),pay=(db.customerPayments||[]).filter(x=>x.customerId===id&&x.month===month),paid=pay.reduce((a,x)=>a+num(x.amount),0),adj=pay.reduce((a,x)=>a+num(x.adjustment),0),total=opening+cur.bill,balance=Math.max(0,total-paid-adj);return{c,month,prev,cur,pr,opening,paid,adj,total,balance}}
 function customerBillPreviewMarkup(d){
