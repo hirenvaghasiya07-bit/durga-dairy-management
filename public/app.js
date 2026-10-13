@@ -798,7 +798,7 @@ function editCustomerOpeningBalance(id){
 }
 function customerDailyExisting(customerId,date){return (db.customerSales||[]).find(x=>x.customerId===customerId&&x.date===date&&x.productKey==='milk')}
 
-function customerMilkSchedule(c){
+function customerMilkSchedule(c,date){
   const old=c?.milkSchedule||{},defaultSlab=c?.slabId||'';
   const make=(raw,qtyFallback,rateFallback,slabFallback)=>{
     if(raw&&typeof raw==='object'&&!Array.isArray(raw))return {qty:num(raw.qty),rate:num(raw.rate||rateFallback),slabId:raw.slabId||slabFallback||defaultSlab};
@@ -808,11 +808,12 @@ function customerMilkSchedule(c){
   const ce=make(old.cow?.evening,c?.cowEvening,old.cow?.rate||c?.cowRate,old.cow?.eveningSlabId||defaultSlab);
   const bm=make(old.buffalo?.morning,c?.buffMorning,old.buffalo?.rate||c?.buffRate,old.buffalo?.morningSlabId||defaultSlab);
   const be=make(old.buffalo?.evening,c?.buffEvening,old.buffalo?.rate||c?.buffRate,old.buffalo?.eveningSlabId||defaultSlab);
+  if(!isAkash()&&(c?.saleKey||'milk')==='milk'){const fixed=customerRateFor(c,'milk',date||iso());cm.rate=fixed;ce.rate=fixed;bm.rate=fixed;be.rate=fixed;}
   return {cow:{morning:cm.qty,evening:ce.qty,rate:cm.rate||ce.rate,morningRate:cm.rate,eveningRate:ce.rate,morningSlabId:cm.slabId,eveningSlabId:ce.slabId},
     buffalo:{morning:bm.qty,evening:be.qty,rate:bm.rate||be.rate,morningRate:bm.rate,eveningRate:be.rate,morningSlabId:bm.slabId,eveningSlabId:be.slabId}};
 }
 function dailyMilkValues(c,date){
-  const s=customerMilkSchedule(c),x=customerDailyExisting(c.id,date);if(x)return x;
+  const s=customerMilkSchedule(c,date),x=customerDailyExisting(c.id,date);if(x)return x;
   const cm=s.cow.morning,ce=s.cow.evening,bm=s.buffalo.morning,be=s.buffalo.evening,qty=cm+ce+bm+be;
   const amount=cm*s.cow.morningRate+ce*s.cow.eveningRate+bm*s.buffalo.morningRate+be*s.buffalo.eveningRate;
   return {morningQty:cm+bm,eveningQty:ce+be,cowMorningQty:cm,cowEveningQty:ce,buffMorningQty:bm,buffEveningQty:be,
@@ -822,7 +823,7 @@ function dailyMilkValues(c,date){
 function saveCustomerDailyInline(customerId,date,el){
   const c=(db.customers||[]).find(x=>x.id===customerId);if(!c)return;
   const cm=num(document.getElementById('cmq_'+customerId)?.value),ce=num(document.getElementById('ceq_'+customerId)?.value),bm=num(document.getElementById('bmq_'+customerId)?.value),be=num(document.getElementById('beq_'+customerId)?.value);
-  const s=customerMilkSchedule(c),qty=cm+ce+bm+be,amount=cm*s.cow.morningRate+ce*s.cow.eveningRate+bm*s.buffalo.morningRate+be*s.buffalo.eveningRate;let r=customerDailyExisting(customerId,date);
+  const s=customerMilkSchedule(c,date),qty=cm+ce+bm+be,amount=cm*s.cow.morningRate+ce*s.cow.eveningRate+bm*s.buffalo.morningRate+be*s.buffalo.eveningRate;let r=customerDailyExisting(customerId,date);
   if(!qty){
     if(r){db.customerSales=db.customerSales.filter(x=>x.id!==r.id);recordDeletion('customerSales',r.id,r);audit('DELETE','Customer Daily Sale',r.id,r,null);save();}
     if(el){el.value='0';}
@@ -842,7 +843,7 @@ function saveCustomerDailyInline(customerId,date,el){
   if(el){el.value=String(el.value||0);el.dataset.savedValue=el.value;}
 }
 function editCustomerDailyMilk(id){
-  const r=(db.customerSales||[]).find(x=>x.id===id);if(!r)return;const cust=(db.customers||[]).find(x=>x.id===r.customerId),s=customerMilkSchedule(cust);
+  const r=(db.customerSales||[]).find(x=>x.id===id);if(!r)return;const cust=(db.customers||[]).find(x=>x.id===r.customerId),s=customerMilkSchedule(cust,r.date);
   modal('Edit Date-wise Milk Entry','<div class="formgrid"><div class="field span2"><label>Customer</label><input value="'+esc(cust?.name||r.customerName||'')+'" readonly></div><div class="field"><label>Date</label><input id="editMilkDate" type="date" value="'+r.date+'"></div>'+
     '<div class="field"><label>Cow Morning Rate ₹/L</label><input id="editCowMorningRate" type="number" step="0.01" value="'+num(r.cowMorningRate??s.cow.morningRate)+'"></div><div class="field"><label>Cow Morning (L)</label><input id="editCowMorning" type="number" step="0.01" value="'+num(r.cowMorningQty)+'"></div>'+
     '<div class="field"><label>Cow Evening Rate ₹/L</label><input id="editCowEveningRate" type="number" step="0.01" value="'+num(r.cowEveningRate??s.cow.eveningRate)+'"></div><div class="field"><label>Cow Evening (L)</label><input id="editCowEvening" type="number" step="0.01" value="'+num(r.cowEveningQty)+'"></div>'+
@@ -1055,9 +1056,9 @@ function openCustomerBulkMilkEntry(customerId){
   const from=val('custBulkStart'),to=val('custBulkEnd');if(!from||!to||from>to)return alert('Select a valid date range.');
   const days=Math.round((new Date(to+'T12:00:00')-new Date(from+'T12:00:00'))/86400000)+1;if(days>62)return alert('Select a maximum of 62 days at a time.');
   const host=document.getElementById('custBulkMilkRows');if(!host||!host.querySelector('[data-bulk-date]'))return alert('Tap Load Dates first.');
-  const schedule=customerMilkSchedule(c),updates=[];
+  const updates=[];
   for(let i=0;i<days;i++){
-   const date=nextISODate(from,i),key=date.replace(/-/g,''),existing=customerDailyExisting(customerId,date);
+   const date=nextISODate(from,i),key=date.replace(/-/g,''),existing=customerDailyExisting(customerId,date),schedule=customerMilkSchedule(c,date);
    const cm=num(val('cbcm_'+key)),ce=num(val('cbce_'+key)),bm=num(val('cbbm_'+key)),be=num(val('cbbe_'+key));
    const cr1=num(val('cbcr1_'+key))||schedule.cow.morningRate,cr2=num(val('cbcr2_'+key))||schedule.cow.eveningRate,br1=num(val('cbbr1_'+key))||schedule.buffalo.morningRate,br2=num(val('cbbr2_'+key))||schedule.buffalo.eveningRate;
    const qty=cm+ce+bm+be,amount=cm*cr1+ce*cr2+bm*br1+be*br2;
@@ -1074,8 +1075,8 @@ function openCustomerBulkMilkEntry(customerId){
  window.buildCustomerBulkMilkRows=function(){
   const from=val('custBulkStart'),to=val('custBulkEnd');if(!from||!to||from>to)return alert('Select a valid date range.');
   const days=Math.round((new Date(to+'T12:00:00')-new Date(from+'T12:00:00'))/86400000)+1;if(days>62)return alert('Select a maximum of 62 days at a time.');
-  const schedule=customerMilkSchedule(c);let html='<table class="table"><thead><tr><th>Date</th><th>Cow AM L</th><th>Cow PM L</th><th>Buffalo AM L</th><th>Buffalo PM L</th><th>Total ₹</th></tr></thead><tbody>';
-  for(let i=0;i<days;i++){const date=nextISODate(from,i),key=date.replace(/-/g,''),r=customerDailyExisting(customerId,date),cm=num(r?.cowMorningQty),ce=num(r?.cowEveningQty),bm=num(r?.buffMorningQty),be=num(r?.buffEveningQty);
+  let html='<table class="table"><thead><tr><th>Date</th><th>Cow AM L</th><th>Cow PM L</th><th>Buffalo AM L</th><th>Buffalo PM L</th><th>Total ₹</th></tr></thead><tbody>';
+  for(let i=0;i<days;i++){const date=nextISODate(from,i),key=date.replace(/-/g,''),r=customerDailyExisting(customerId,date),schedule=customerMilkSchedule(c,date),cm=num(r?.cowMorningQty),ce=num(r?.cowEveningQty),bm=num(r?.buffMorningQty),be=num(r?.buffEveningQty);
    html+='<tr data-bulk-date="'+date+'"><td>'+esc(fmtDate(date))+'</td><td><input id="cbcm_'+key+'" type="number" min="0" step=".01" value="'+cm+'" style="width:78px"></td><td><input id="cbce_'+key+'" type="number" min="0" step=".01" value="'+ce+'" style="width:78px"></td><td><input id="cbbm_'+key+'" type="number" min="0" step=".01" value="'+bm+'" style="width:78px"></td><td><input id="cbbe_'+key+'" type="number" min="0" step=".01" value="'+be+'" style="width:78px"></td><td><span id="cbtotal_'+key+'">₹0</span><input type="hidden" id="cbcr1_'+key+'" value="'+num(r?.cowMorningRate??schedule.cow.morningRate)+'"><input type="hidden" id="cbcr2_'+key+'" value="'+num(r?.cowEveningRate??schedule.cow.eveningRate)+'"><input type="hidden" id="cbbr1_'+key+'" value="'+num(r?.buffMorningRate??schedule.buffalo.morningRate)+'"><input type="hidden" id="cbbr2_'+key+'" value="'+num(r?.buffEveningRate??schedule.buffalo.eveningRate)+'"></td></tr>';
   }
   html+='</tbody></table>';const host=document.getElementById('custBulkMilkRows');if(host)host.innerHTML=html;
