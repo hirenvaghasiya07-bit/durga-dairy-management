@@ -61,8 +61,8 @@ window.shareCustomerBillFromPreview=function(){
  let opened=false;
  try{const w=window.open(waURL,'_blank');if(w){opened=true;try{w.opener=null;}catch(_){}}}catch(_){}
  if(!opened){const a=document.createElement('a');a.href=waURL;a.target='_blank';a.rel='noopener noreferrer';a.style.display='none';document.body.appendChild(a);a.click();a.remove();}
- // Browsers cannot automatically attach a local PDF to a WhatsApp chat.
- downloadCustomerBill(p.file);
+ // Browsers cannot automatically attach a local PDF to a WhatsApp chat. Download quietly so an alert cannot interrupt the WhatsApp tab.
+ const fileURL=URL.createObjectURL(p.file),link=document.createElement('a');link.href=fileURL;link.download=p.file.name||'Durga_Dairy_Bill.pdf';link.style.display='none';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(fileURL),30000);
 };
 window.customerBillPrintFromPreview=function(){const p=window.__customerBillPreview;if(p&&!window.open(p.url,'_blank'))alert('Allow pop-ups to open the PDF.');};
 window.customerBillPrint=function(id,month){previewCustomerBill(id,month);};
