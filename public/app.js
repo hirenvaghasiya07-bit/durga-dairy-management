@@ -808,7 +808,7 @@ function customerMilkSchedule(c,date){
   const ce=make(old.cow?.evening,c?.cowEvening,old.cow?.rate||c?.cowRate,old.cow?.eveningSlabId||defaultSlab);
   const bm=make(old.buffalo?.morning,c?.buffMorning,old.buffalo?.rate||c?.buffRate,old.buffalo?.morningSlabId||defaultSlab);
   const be=make(old.buffalo?.evening,c?.buffEvening,old.buffalo?.rate||c?.buffRate,old.buffalo?.eveningSlabId||defaultSlab);
-  if(!isAkash()&&(c?.saleKey||'milk')==='milk'){const fixed=customerRateFor(c,'milk',date||iso());cm.rate=fixed;ce.rate=fixed;bm.rate=fixed;be.rate=fixed;}
+  const hasMilkPrice=(c?.priceHistory||[]).some(x=>x.productKey==='milk')||(c?.saleKey||'milk')==='milk';if(!isAkash()&&hasMilkPrice){const fixed=customerRateFor(c,'milk',date||iso());cm.rate=fixed;ce.rate=fixed;bm.rate=fixed;be.rate=fixed;}
   return {cow:{morning:cm.qty,evening:ce.qty,rate:cm.rate||ce.rate,morningRate:cm.rate,eveningRate:ce.rate,morningSlabId:cm.slabId,eveningSlabId:ce.slabId},
     buffalo:{morning:bm.qty,evening:be.qty,rate:bm.rate||be.rate,morningRate:bm.rate,eveningRate:be.rate,morningSlabId:bm.slabId,eveningSlabId:be.slabId}};
 }
