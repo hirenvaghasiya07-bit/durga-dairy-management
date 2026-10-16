@@ -44,16 +44,18 @@ async function sha256(text){
   return b64(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text)));
 }
 async function readBody(req){try{return await req.json()}catch{return {}}}
-async function tokenFor(env,email){
-  const secret=env.SESSION_SECRET||"CHANGE_THIS_IN_CLOUDFLARE";
-  return sha256(secret+":"+String(email).toLowerCase()+":durga-dairy");
+async function issueSession(env,u){
+  const bytes=crypto.getRandomValues(new Uint8Array(32));
+  const token=b64(bytes).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  const tokenHash=await sha256(token),createdAt=new Date(),expiresAt=new Date(createdAt.getTime()+30*24*60*60*1000).toISOString();
+  await env.DB.prepare("INSERT INTO session_tokens(token_hash,user_id,created_at,expires_at,revoked_at) VALUES(?,?,?,?,NULL)").bind(tokenHash,u.id,createdAt.toISOString(),expiresAt).run();
+  return token;
 }
 async function authUser(req,env){
-  const token=(req.headers.get("authorization")||"").replace(/^Bearer\s+/i,"");
+  const token=(req.headers.get("authorization")||"").replace(/^Bearer\s+/i,"").trim();
   if(!token)return null;
-  const users=await env.DB.prepare("SELECT id,name,email,role,active,password_hash,password_salt FROM users WHERE active=1").all();
-  for(const u of users.results||[]) if(await tokenFor(env,u.email)===token)return u;
-  return null;
+  const tokenHash=await sha256(token),now=new Date().toISOString();
+  return await env.DB.prepare("SELECT u.id,u.name,u.email,u.role,s.token_hash AS tokenHash FROM session_tokens s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.active=1").bind(tokenHash,now).first();
 }
 
 function emptyState(){
@@ -64,12 +66,14 @@ function emptyState(){
     settings:{},
     prices:[],sales:[],collections:[],milk:[],stockPurchases:[],stockUsage:[],
     expenses:[],customers:[],vendors:[],vendorPayments:[],cashChecks:[],cashOpenings:[],
-    audit:[],customerSales:[],customerPayments:[],customerBills:[]
+    audit:[],customerSales:[],customerPayments:[],customerBills:[],customerOpeningBalances:[],internalTransfers:[],milkPriceVarieties:[],__tombstones:{}
   };
 }
 async function ensureSeed(env){
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS session_tokens(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,created_at TEXT NOT NULL,expires_at TEXT NOT NULL,revoked_at TEXT)").run();
   const r=await env.DB.prepare("SELECT COUNT(*) AS n FROM users").first();
   if(Number(r?.n||0)>0)return;
+  if(env.ALLOW_DEMO_SEED!=="true")return;
   const defaults=[
     ["u_owner","Hiren","owner@durga.local","Owner","1234"],
     ["u_brother","Brother","brother@durga.local","Full Access Member","3333"],
@@ -90,25 +94,135 @@ async function ensureSeed(env){
 const ARRAY_KEYS=[
   "sales","collections","milk","stockPurchases","stockUsage","expenses","customers",
   "vendors","vendorPayments","cashChecks","cashOpenings","audit","prices",
-  "customerSales","customerPayments","customerBills"
+  "customerSales","customerPayments","customerBills","customerOpeningBalances","internalTransfers","milkPriceVarieties"
 ];
 
 function clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
 
-function mergeArrayById(remote,incoming){
+function tombstoneTime(value){
+  if(typeof value==="string")return value;
+  return value?.deletedAt||value?.deleted_at||value?.at||"";
+}
+function mergeTombstones(...sources){
+  const out={};
+  for(const source of sources){
+    for(const [entity,records] of Object.entries(source||{})){
+      out[entity]=out[entity]||{};
+      for(const [id,value] of Object.entries(records||{})){
+        const prev=out[entity][id];
+        const nextTime=tombstoneTime(value),prevTime=tombstoneTime(prev);
+        if(!prev||nextTime>=prevTime)out[entity][id]=clone(value);
+      }
+    }
+  }
+  return out;
+}
+function addDeletionTombstones(tombstones,deleted,business,actor){
+  const out=mergeTombstones(tombstones);
+  for(const [entity,ids] of Object.entries(deleted||{})){
+    if(!Array.isArray(ids))continue;
+    out[entity]=out[entity]||{};
+    for(const rawId of ids){
+      const id=String(rawId||"");
+      if(!id)continue;
+      const previous=out[entity][id];
+      out[entity][id]={recordId:id,businessId:business,entityType:entity,deletedAt:tombstoneTime(previous)||new Date().toISOString(),deletedBy:actor||"authorized-user",deletionVersion:6};
+    }
+  }
+  return out;
+}
+function mergeArrayById(remote,incoming,tombstones={},entity=""){
   const map=new Map();
   for(const x of Array.isArray(remote)?remote:[]) if(x&&x.id!=null) map.set(String(x.id),x);
   for(const x of Array.isArray(incoming)?incoming:[]) if(x&&x.id!=null) map.set(String(x.id),x);
-  return Array.from(map.values());
+  const dead=tombstones?.[entity]||{};
+  return Array.from(map.values()).filter(x=>!Object.prototype.hasOwnProperty.call(dead,String(x.id)));
 }
-
-function mergeBusiness(remote,incoming){
-  const out=clone(remote||emptyState());
-  for(const key of ARRAY_KEYS) out[key]=mergeArrayById(remote?.[key],incoming?.[key]);
-  out.users=mergeArrayById(remote?.users,incoming?.users);
-  out.settings={...(remote?.settings||{}),...(incoming?.settings||{})};
+function canonicalRecord(value){
+  if(Array.isArray(value))return "["+value.map(canonicalRecord).join(",")+"]";
+  if(value&&typeof value==="object")return "{"+Object.keys(value).sort().map(k=>JSON.stringify(k)+":"+canonicalRecord(value[k])).join(",")+"}";
+  return JSON.stringify(value);
+}
+function stableLegacyId(entity,record,occurrence=0){
+  const raw=canonicalRecord(record);let hash=2166136261;
+  for(let i=0;i<raw.length;i++){hash^=raw.charCodeAt(i);hash=Math.imul(hash,16777619)}
+  return "legacy_"+entity+"_"+(hash>>>0).toString(36)+"_"+occurrence;
+}
+function normalizeBusinessRecords(incoming,business,actor){
+  const safe=clone(incoming||emptyState());
+  for(const key of ARRAY_KEYS){
+    if(!Array.isArray(safe[key]))continue;
+    if(business==="akash"&&["internalTransfers","customerOpeningBalances"].includes(key))continue;
+    if(business==="hiren"&&key==="milkPriceVarieties")continue;
+    const seen=new Map();
+    safe[key]=safe[key].map(record=>{
+      if(!record||typeof record!=="object")return record;
+      let normalized={...record};
+      if(normalized.id==null){
+        const signature=canonicalRecord(normalized),occurrence=seen.get(signature)||0;
+        seen.set(signature,occurrence+1);
+        normalized.id=stableLegacyId(key,normalized,occurrence);
+        normalized.legacyIdAssigned=true;
+      }
+      const existing=String(normalized.businessId||"").toLowerCase();
+      if(existing&&existing!==business){
+        const error=new Error("Record "+String(normalized.id)+" belongs to "+existing+" and cannot be synced into "+business+". Local data was preserved.");
+        error.code="BUSINESS_OWNERSHIP_MISMATCH";throw error;
+      }
+      return {...normalized,businessId:business};
+    });
+  }
+  return safe;
+}
+function normalizeAkashV2(source,business){
+  const v=clone(source||{});
+  for(const key of ["purchases","sales","collections","slabs","vendors","purchaseRates","expenses"]){
+    if(!Array.isArray(v[key]))continue;
+    const seen=new Map();
+    v[key]=v[key].map(record=>{
+      if(!record||typeof record!=="object")return record;
+      let x={...record};
+      if(x.id==null){const signature=canonicalRecord(x),occurrence=seen.get(signature)||0;seen.set(signature,occurrence+1);x.id=stableLegacyId("akashV2_"+key,x,occurrence);x.legacyIdAssigned=true;}
+      const existing=String(x.businessId||"").toLowerCase();
+      if(existing&&existing!==business){const e=new Error("Akash V2 record "+String(x.id)+" belongs to "+existing+" and cannot be synced into "+business+".");e.code="BUSINESS_OWNERSHIP_MISMATCH";throw e;}
+      return {...x,businessId:business};
+    });
+  }
+  return v;
+}
+function mergeAkashV2(remoteSettings,incomingSettings,business){
+  const remote=normalizeAkashV2(remoteSettings?.akashV2||{},business),incoming=normalizeAkashV2(incomingSettings?.akashV2||{},business);
+  const tomb=mergeTombstones(remote.__tomb,incoming.__tomb),out={...remote,...incoming};
+  for(const key of ["purchases","sales","collections","slabs","vendors","purchaseRates","expenses"])out[key]=mergeArrayById(remote[key],incoming[key],tomb,key);
+  out.__tomb=tomb;
+  return out;
+}
+function mergeBusiness(remote,incoming,deleted={},business="hiren",actor="authorized-user"){
+  const safeRemote=normalizeBusinessRecords(remote||emptyState(),business,actor);
+  const out=clone(safeRemote||emptyState());
+  const safeIncoming=normalizeBusinessRecords(incoming,business,actor);
+  const tombstones=addDeletionTombstones(mergeTombstones(safeRemote?.__tombstones,safeIncoming?.__tombstones),deleted,business,actor);
+  out.__tombstones=tombstones;
+  for(const key of ARRAY_KEYS){
+    if(key==="audit"){
+      const existing=Array.isArray(safeRemote?.audit)?safeRemote.audit:[];
+      const ids=new Set(existing.map(x=>String(x?.id)));
+      const appended=(Array.isArray(safeIncoming?.audit)?safeIncoming.audit:[]).filter(x=>x&&x.id!=null&&!ids.has(String(x.id)));
+      out.audit=[...existing,...appended];
+      continue;
+    }
+    if(business==="akash"&&["internalTransfers","customerOpeningBalances"].includes(key)){out[key]=Array.isArray(safeRemote?.[key])?safeRemote[key]:[];continue;}
+    if(business==="hiren"&&key==="milkPriceVarieties"){out[key]=Array.isArray(safeRemote?.[key])?safeRemote[key]:[];continue;}
+    out[key]=mergeArrayById(safeRemote?.[key],safeIncoming?.[key],tombstones,key);
+  }
+  out.users=mergeArrayById(safeRemote?.users,safeIncoming?.users,tombstones,"users");
+  out.settings={...(safeRemote?.settings||{}),...(safeIncoming?.settings||{})};
+  if(business==="akash"){
+    if(safeRemote?.settings?.akashV2||safeIncoming?.settings?.akashV2)out.settings.akashV2=mergeAkashV2(safeRemote?.settings,safeIncoming?.settings,"akash");
+  }else if(safeRemote?.settings?.akashV2)out.settings.akashV2=clone(safeRemote.settings.akashV2);
+  else delete out.settings.akashV2;
   out.currentUser=null;
-  out.version=Math.max(Number(remote?.version||0),Number(incoming?.version||0),5);
+  out.version=Math.max(Number(safeRemote?.version||0),Number(safeIncoming?.version||0),6);
   return out;
 }
 
@@ -119,12 +233,62 @@ function mergeBusiness(remote,incoming){
   - A stale Akash snapshot can never overwrite Hiren.
   - A stale Hiren snapshot can never overwrite Akash.
 */
-function mergeWorkspace(remote,incoming,business){
+function rolePolicy(role){
+  if(["Owner","Full Access Member"].includes(role))return {arrays:new Set(ARRAY_KEYS),users:true,settings:"all"};
+  if(role==="Manager")return {arrays:new Set(ARRAY_KEYS.filter(k=>k!=="milkPriceVarieties")),users:false,settings:"manager"};
+  if(role==="Family Member")return {arrays:new Set(["expenses","audit"]),users:false,settings:"family"};
+  if(role==="Staff")return {arrays:new Set(["sales","audit"]),users:false,settings:"staff"};
+  return {arrays:new Set(),users:false,settings:"none"};
+}
+function scopedSettings(settings,policy){
+  const s=settings||{};
+  if(policy.settings==="all")return clone(s);
+  if(policy.settings==="manager"){
+    const keys=["salePrices","cowRate","buffaloRate","gheeBuyRate","gheeSaleRate","pedaBuyRate","pedaSaleRate","milkSlabs","expenseCategories","customerBillTerms","customerBillPaymentInstructions"];
+    return Object.fromEntries(keys.filter(k=>Object.prototype.hasOwnProperty.call(s,k)).map(k=>[k,clone(s[k])]));
+  }
+  if(policy.settings==="family")return Object.prototype.hasOwnProperty.call(s,"expenseCategories")?{expenseCategories:clone(s.expenseCategories)}:{};
+  return {};
+}
+function scopeStateForRole(source,role){
+  const policy=rolePolicy(role),out=clone(source||emptyState());
+  for(const key of ARRAY_KEYS)if(!policy.arrays.has(key))out[key]=[];
+  if(!policy.users)out.users=(out.users||[]).map(u=>({id:u.id,name:u.name,email:u.email,role:u.role,active:u.active}));
+  out.settings=scopedSettings(out.settings,policy);
+  out.currentUser=null;
+  return out;
+}
+function sanitizeIncomingForRole(incoming,remote,role,actor){
+  const policy=rolePolicy(role),safe=clone(incoming||emptyState()),remoteAudit=Array.isArray(remote?.audit)?remote.audit:[];
+  for(const key of ARRAY_KEYS)if(!policy.arrays.has(key))safe[key]=[];
+  if(!policy.users)safe.users=[];
+  if(["Family Member","Staff"].includes(role)){
+    for(const key of policy.arrays){
+      if(key==="audit")continue;
+      const existing=new Map((Array.isArray(remote?.[key])?remote[key]:[]).filter(x=>x?.id!=null).map(x=>[String(x.id),x]));
+      safe[key]=(Array.isArray(safe[key])?safe[key]:[]).filter(x=>{
+        if(!x||x.id==null)return false;
+        const previous=existing.get(String(x.id));
+        return !previous?true:String(previous.userId||previous.createdBy||"")===String(actor.id);
+      }).map(x=>({...x,userId:actor.id,updatedBy:actor.id,businessId:actor.business}));
+    }
+  }
+  safe.settings=scopedSettings(safe.settings,policy);
+  const existingAuditIds=new Set(remoteAudit.map(x=>String(x?.id)));
+  safe.audit=(Array.isArray(incoming?.audit)?incoming.audit:[]).filter(x=>x&&x.id!=null&&!existingAuditIds.has(String(x.id))).map(x=>({...x,userId:actor.id,userName:actor.name,businessId:actor.business,createdAt:x.createdAt||x.at||new Date().toISOString()}));
+  if(safe.__tombstones){
+    const keep={};
+    for(const key of Object.keys(safe.__tombstones))if(policy.arrays.has(key))keep[key]=safe.__tombstones[key];
+    safe.__tombstones=keep;
+  }
+  return safe;
+}
+function mergeWorkspace(remote,incoming,business,deleted={},actor="authorized-user"){
   const base=clone(remote||emptyState());
   if(business==="akash"){
     const remoteAkash=base?.settings?.__businesses?.akash||emptyState();
     const incomingAkash=incoming?.settings?.__businesses?.akash||incoming||emptyState();
-    const mergedAkash=mergeBusiness(remoteAkash,incomingAkash);
+    const mergedAkash=mergeBusiness(remoteAkash,incomingAkash,deleted,"akash",actor);
     base.settings={...(base.settings||{}),__businesses:{...(base.settings?.__businesses||{}),akash:mergedAkash}};
     base.version=Math.max(Number(base.version||0),Number(mergedAkash.version||0),5);
     base.currentUser=null;
@@ -134,7 +298,7 @@ function mergeWorkspace(remote,incoming,business){
   const incomingHiren=clone(incoming||{});
   const preservedBusinesses=clone(base?.settings?.__businesses||{});
   delete incomingHiren?.settings?.__businesses;
-  const merged=mergeBusiness(base,incomingHiren);
+  const merged=mergeBusiness(base,incomingHiren,deleted,"hiren",actor);
   merged.settings={...(merged.settings||{}),__businesses:preservedBusinesses};
   merged.currentUser=null;
   return merged;
@@ -155,7 +319,7 @@ export default {
       await ensureSeed(env);
 
       if(url.pathname==="/api/health")
-        return json({ok:true,service:"Durga Dairy",cloudflare:true,syncVersion:5},200,req);
+        return json({ok:true,service:"Durga Dairy",cloudflare:true,syncVersion:7},200,req);
 
       if(url.pathname==="/api/login"&&req.method==="POST"){
         const b=await readBody(req);
@@ -163,19 +327,38 @@ export default {
         const u=await env.DB.prepare("SELECT id,name,email,role,active,password_hash,password_salt FROM users WHERE lower(email)=? AND active=1").bind(email).first();
         if(!u||!(await verifyPassword(String(b.password||""),u.password_salt,u.password_hash)))
           return json({error:"Invalid login"},401,req);
-        return json({token:await tokenFor(env,u.email),user:{id:u.id,name:u.name,email:u.email,role:u.role}},200,req);
+        const token=await issueSession(env,u);
+        return json({token,user:{id:u.id,name:u.name,email:u.email,role:u.role}},200,req);
+      }
+
+      if(url.pathname==="/api/logout"&&req.method==="POST"){
+        const u=await authUser(req,env);
+        if(!u)return json({error:"Unauthorized"},401,req);
+        await env.DB.prepare("UPDATE session_tokens SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL").bind(new Date().toISOString(),u.tokenHash).run();
+        return json({ok:true},200,req);
       }
 
       if(url.pathname==="/api/forgot-password"&&req.method==="POST")
-        return json({ok:true,message:"Reset workflow accepted. Configure email delivery before production use."},200,req);
+        return json({error:"Password reset email delivery is not configured."},501,req);
 
       if(url.pathname==="/api/state"&&req.method==="GET"){
         const u=await authUser(req,env);
         if(!u)return json({error:"Unauthorized"},401,req);
         const session=env.DB.withSession("first-primary");
         const row=await session.prepare("SELECT state_json,updated_at FROM workspace_state WHERE workspace_id=?").bind("durga-dairy").first();
-        const db=row?.state_json?JSON.parse(row.state_json):emptyState();
-        return json({ok:true,db,updatedAt:row?.updated_at||null,syncVersion:5},200,req);
+        const full=row?.state_json?JSON.parse(row.state_json):emptyState();
+        const requested=String(url.searchParams.get("business")||"hiren").toLowerCase();
+        const business=requested==="akash"?"akash":"hiren";
+        if((u.id==="u_akash"&&business!=="akash")||(u.id!=="u_akash"&&business!=="hiren"))return json({error:"Business access denied"},403,req);
+        let db;
+        if(business==="akash"){
+          const akash=full?.settings?.__businesses?.akash||emptyState();
+          db={...emptyState(),settings:{__businesses:{akash:scopeStateForRole(akash,u.role)}}};
+        }else{
+          db=clone(full);db.settings={...(db.settings||{})};delete db.settings.__businesses;
+          db=scopeStateForRole(db,u.role);
+        }
+        return json({ok:true,db,updatedAt:row?.updated_at||null,syncVersion:7,business},200,req);
       }
 
       if(url.pathname==="/api/sync"&&req.method==="POST"){
@@ -191,22 +374,52 @@ export default {
         const row=await session.prepare("SELECT state_json FROM workspace_state WHERE workspace_id=?").bind("durga-dairy").first();
         const remote=row?.state_json?JSON.parse(row.state_json):emptyState();
 
-        const merged=mergeWorkspace(remote,incoming,business);
+        const deleted=b.deleted&&typeof b.deleted==="object"?b.deleted:{};
+        if((u.id==="u_akash"&&business!=="akash")||(u.id!=="u_akash"&&business!=="hiren"))return json({error:"Business access denied"},403,req);
+        const policy=rolePolicy(u.role);
+        const remoteBusiness=business==="akash"?(remote?.settings?.__businesses?.akash||emptyState()):remote;
+        const incomingBusiness=business==="akash"?(incoming?.settings?.__businesses?.akash||incoming||emptyState()):incoming;
+        const sanitized=sanitizeIncomingForRole(incomingBusiness,remoteBusiness,u.role,{id:u.id,name:u.name,business});
+        const allowedDeleted={};
+        for(const key of Object.keys(deleted||{})){
+          if(!policy.arrays.has(key))continue;
+          let ids=Array.isArray(deleted[key])?deleted[key].map(String):[];
+          if(["Family Member","Staff"].includes(u.role)){
+            const existing=new Map((Array.isArray(remoteBusiness?.[key])?remoteBusiness[key]:[]).filter(x=>x?.id!=null).map(x=>[String(x.id),x]));
+            ids=ids.filter(id=>{const previous=existing.get(id);return previous&&String(previous.userId||previous.createdBy||"")===String(u.id)});
+          }
+          if(ids.length)allowedDeleted[key]=ids;
+        }
+        let merged;
+        try{
+          const safePayload=business==="akash"?{...emptyState(),settings:{__businesses:{akash:sanitized}}}:sanitized;
+          merged=mergeWorkspace(remote,safePayload,business,allowedDeleted,u.id||u.email);
+        }catch(e){if(e?.code==="BUSINESS_OWNERSHIP_MISMATCH")return json({error:e.message},403,req);throw e;}
         const updatedAt=new Date().toISOString();
         await env.DB.prepare(
           "INSERT INTO workspace_state(workspace_id,state_json,updated_at) VALUES(?,?,?) ON CONFLICT(workspace_id) DO UPDATE SET state_json=excluded.state_json,updated_at=excluded.updated_at"
         ).bind("durga-dairy",JSON.stringify(merged),updatedAt).run();
 
         await saveBackup(env,merged);
-        return json({ok:true,db:merged,updatedAt,business,syncVersion:5},200,req);
+        let responseDb;
+        if(business==="akash"){
+          const akash=merged?.settings?.__businesses?.akash||emptyState();
+          responseDb={...emptyState(),settings:{__businesses:{akash}}};
+        }else{
+          responseDb=clone(merged);responseDb.settings={...(responseDb.settings||{})};delete responseDb.settings.__businesses;
+        }
+        return json({ok:true,db:responseDb,updatedAt,business,syncVersion:7},200,req);
       }
 
       if(url.pathname==="/api/zero-two-state"&&req.method==="GET"){
+        const u=await authUser(req,env);
+        if(!u)return json({error:"Unauthorized"},401,req);
+        if(!["Owner","Full Access Member"].includes(u.role))return json({error:"Full access required"},403,req);
         const session=env.DB.withSession("first-primary");
         const row=await session.prepare("SELECT state_json,updated_at FROM workspace_state WHERE workspace_id=?").bind("durga-dairy").first();
         const db=row?.state_json?JSON.parse(row.state_json):emptyState();
         const akash=db?.settings?.__businesses?.akash||emptyState();
-        return json({ok:true,hiren:db,akash,updatedAt:row?.updated_at||null,syncVersion:5},200,req);
+        return json({ok:true,hiren:db,akash,updatedAt:row?.updated_at||null,syncVersion:7},200,req);
       }
 
       if(url.pathname==="/api/backup"&&req.method==="GET"){
@@ -223,3 +436,5 @@ export default {
     }
   }
 };
+
+export { mergeTombstones, addDeletionTombstones, mergeArrayById, normalizeBusinessRecords, mergeBusiness, mergeWorkspace, stableLegacyId, canonicalRecord, normalizeAkashV2, mergeAkashV2, rolePolicy, scopeStateForRole, sanitizeIncomingForRole };
