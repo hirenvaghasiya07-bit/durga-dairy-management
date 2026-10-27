@@ -663,10 +663,10 @@ function makeCustomerBillPDF(d){
 function customerBillData(id,month){const c=(db.customers||[]).find(x=>x.id===id);if(!c)return null;const prev=prevMonth(month),cur=customerMonthSummary(id,month),pr=customerMonthSummary(id,prev),opening=pr.balance,pay=(db.customerPayments||[]).filter(x=>x.customerId===id&&x.month===month),paid=pay.reduce((a,x)=>a+num(x.amount),0),adj=pay.reduce((a,x)=>a+num(x.adjustment),0),total=opening+cur.bill,balance=Math.max(0,total-paid-adj);return{c,month,prev,cur,pr,opening,paid,adj,total,balance}}
 async function shareCustomerBill(id,month){
   const d=customerBillData(id,month||ym(iso()));if(!d)return;
-  const phone=String(d.c.mobile||'').replace(/\\D/g,'');
+  const phone=String(d.c.mobile||'').replace(/\D/g,'');
   if(phone.length<10)return alert('Customer mobile number is missing or invalid. Please update the customer mobile number first.');
   const file=new File([makeCustomerBillPDF(d)],String(d.c.name||'Customer').replace(/[^a-z0-9]+/gi,'_')+'_'+d.month+'_Bill.pdf',{type:'application/pdf'});
-  const gujarati='નમસ્તે '+d.c.name+' 🙏\\n\\nઆપનું '+d.month+' નું Milk Bill તૈયાર છે.\\nકુલ Bill: '+money(d.cur.bill)+'\\nપહેલાનું બાકી: '+money(d.opening)+'\\nકુલ બાકી: '+money(d.total)+'\\nઆ મહિને મળેલ: '+money(d.paid)+'\\nહાલનું બાકી: '+money(d.balance)+'\\n\\nસમયસર ચુકવણી અને આપના વિશ્વાસ માટે દિલથી આભાર. 🙏\\n\\nDurga Dairy';
+  const gujarati='નમસ્તે '+d.c.name+' 🙏\n\nઆપનું '+d.month+' નું Milk Bill તૈયાર છે.\nકુલ Bill: '+money(d.cur.bill)+'\nપહેલાનું બાકી: '+money(d.opening)+'\nકુલ બાકી: '+money(d.total)+'\nઆ મહિને મળેલ: '+money(d.paid)+'\nહાલનું બાકી: '+money(d.balance)+'\n\nસમયસર ચુકવણી અને આપના વિશ્વાસ માટે દિલથી આભાર. 🙏\n\nDurga Dairy';
   if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
     try{
       await navigator.share({title:'Durga Dairy - '+d.c.name+' Bill',text:gujarati,files:[file]});
